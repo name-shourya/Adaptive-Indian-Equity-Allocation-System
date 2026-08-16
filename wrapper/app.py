@@ -147,7 +147,7 @@ custom_bounds = {
 @st.cache_data(ttl=3600)
 def get_market_data(period):
     tickers = ["^NSEI", "GOLDBEES.NS", "LIQUIDBEES.NS"]
-    prices, returns = ingestor.fetch_ohlcv(tickers=tickers, period=period)
+    prices, returns, _ = ingestor.fetch_ohlcv(tickers=tickers, period=period)
     returns.columns = ["Equity (Nifty 50)", "Gold ETF", "Debt / Liquid"]
     return prices, returns
 
