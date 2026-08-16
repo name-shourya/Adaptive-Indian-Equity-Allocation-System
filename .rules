@@ -1,0 +1,23 @@
+# Nifty Dynamic Allocator - System Operating Rules
+
+## System Architecture Rules
+1. **Layer Separation**:
+   - `core/`: Pure quantitative algorithms, data fetching, GJR-GARCH model fitting, FinBERT sentiment scoring, and mathematical solvers. Must have zero UI dependencies.
+   - `backtest/`: Deterministic backtesting and statistical evaluation. Must use vectorized calculations where possible.
+   - `wrapper/`: Product interface layer handling user CSV imports, capital allocation routing (SIP vs Tactical), and Streamlit presentation.
+
+2. **Asset Allocation Boundaries**:
+   - Supported Asset Classes: Nifty 50 Index (`^NSEI`), Nifty Gold (`GOLDBEES.NS`), Debt / Liquid (`LIQUIDBEES.NS`), Cash.
+   - Maximum Equity Allocation: 90%
+   - Minimum Equity Allocation: 20%
+   - Minimum Cash / Liquidity Buffer: 5%
+   - Individual Asset Weight Limits: Equity [20% - 90%], Gold [0% - 30%], Debt [5% - 50%], Cash [0% - 20%].
+
+3. **Quantitative Model Requirements**:
+   - **GJR-GARCH Volatility**: Fit asymmetric GJR-GARCH(1,1,1) model with Student's t or Normal distribution. If solver fails to converge on window, fallback to EWMA volatility estimation.
+   - **FinBERT Sentiment**: Tokenize and score macro financial news. Sentiment scores mapped to dynamic equilibrium tilt $\delta \in [-0.15, +0.15]$ for Black-Litterman subjective views vector $q$.
+   - **Black-Litterman Optimization**: Combine implied market equilibrium returns with sentiment-adjusted GJR-GARCH views. Minimize negative Sharpe ratio using scipy SLSQP solver.
+
+4. **Rebalancing & Execution**:
+   - Tactical Rebalancing threshold: Triggers when target weight deviates from current weight by $\ge 5\%$.
+   - SIP Routing: Cash inflows distributed proportionally to minimize portfolio distance to target weights without selling existing holdings when possible.

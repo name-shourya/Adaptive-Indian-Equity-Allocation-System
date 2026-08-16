@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Cache directory
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Environment & IDE
+.venv/
+env/
+venv/
+ENV/
+.idea/
+.vscode/
+
+# Streamlit local state
+.streamlit/
+
+# OS specific files
+.DS_Store
+Thumbs.db
