@@ -2,7 +2,10 @@ import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple
-from arch import arch_model
+try:
+    from arch import arch_model
+except ImportError:
+    arch_model = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,6 +37,10 @@ class VolatilityEngine:
         # Rescale returns to percentage points for numerical stability in arch solver
         scale_factor = 100.0
         ret_scaled = returns.dropna() * scale_factor
+
+        if arch_model is None:
+            logger.debug("arch package not installed. Utilizing EWMA Volatility Engine fallback.")
+            return self._fit_ewma_fallback(returns)
 
         try:
             am = arch_model(
@@ -125,7 +132,7 @@ class VolatilityEngine:
 
         return {
             "success": True,
-            "model_name": "EWMA Fallback (\u03bb=0.94)",
+            "model_name": "EWMA Fallback (lambda=0.94)",
             "omega": 0.0,
             "alpha": 1 - lambda_param,
             "gamma": 0.0,

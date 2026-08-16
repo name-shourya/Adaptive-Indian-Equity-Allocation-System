@@ -2,7 +2,10 @@ import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
-from scipy.optimize import minimize
+try:
+    from scipy.optimize import minimize
+except ImportError:
+    minimize = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -44,7 +47,7 @@ class PortfolioOptimizer:
         
         Parameters:
             returns: DataFrame of asset log daily returns
-            sentiment_score: Composite FinBERT sentiment score \in [-1.0, 1.0]
+            sentiment_score: Composite FinBERT sentiment score in range [-1.0, 1.0]
             gjr_vol: GJR-GARCH forecast volatility dict {horizon: annualized_vol}
             market_weights: Initial benchmark equilibrium asset weights
             custom_bounds: Min/max allocation constraints per asset class
@@ -170,15 +173,20 @@ class PortfolioOptimizer:
         # Initial Guess: Equal Weights
         init_weights = np.ones(n) / n
 
-        # Run SLSQP Solver
-        res = minimize(
-            negative_sharpe,
-            init_weights,
-            method="SLSQP",
-            bounds=bounds,
-            constraints=constraints,
-            options={"maxiter": 500, "ftol": 1e-9}
-        )
+        if minimize is None:
+            logger.debug("scipy.optimize not installed. Using heuristic equal-weighted allocation.")
+            opt_w = init_weights
+            p_return = float(np.dot(opt_w, expected_returns))
+            p_vol = float(np.sqrt(np.dot(opt_w.T, np.dot(cov_matrix, opt_w))))
+            sharpe = float((p_return - self.rf) / p_vol) if p_vol > 0 else 0.0
+            return {
+                "success": True,
+                "weights": dict(zip(asset_names, opt_w)),
+                "expected_return": p_return,
+                "portfolio_volatility": p_vol,
+                "sharpe_ratio": sharpe,
+                "optimizer_status": "Heuristic fallback"
+            }
 
         if res.success:
             opt_w = res.x

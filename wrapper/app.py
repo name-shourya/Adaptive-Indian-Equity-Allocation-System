@@ -286,10 +286,10 @@ with tab2:
     col_v1, col_v2 = st.columns([1, 2])
     with col_v1:
         st.markdown(f"**Model Status**: `{garch_fit['model_name']}`")
-        st.markdown(f"**$\omega$ (Omega)**: `{garch_fit['omega']:.6f}`")
-        st.markdown(f"**$\\alpha$ (Alpha - Shock impact)**: `{garch_fit['alpha']:.4f}`")
-        st.markdown(f"**$\gamma$ (Gamma - Asymmetry/Leverage)**: `{garch_fit['gamma']:.4f}`")
-        st.markdown(f"**$\\beta$ (Beta - Vol Persistence)**: `{garch_fit['beta']:.4f}`")
+        st.markdown(r"**$\omega$ (Omega)**: `" + f"{garch_fit['omega']:.6f}`")
+        st.markdown(r"**$\alpha$ (Alpha - Shock impact)**: `" + f"{garch_fit['alpha']:.4f}`")
+        st.markdown(r"**$\gamma$ (Gamma - Asymmetry/Leverage)**: `" + f"{garch_fit['gamma']:.4f}`")
+        st.markdown(r"**$\beta$ (Beta - Vol Persistence)**: `" + f"{garch_fit['beta']:.4f}`")
         st.markdown(f"**Persistence Total**: `{garch_fit['persistence']:.4f}`")
         
         st.subheader("Forecast Horizons")

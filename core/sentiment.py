@@ -43,7 +43,7 @@ class SentimentEngine:
         
         Returns:
             Dict containing individual scores, average positive/negative/neutral probabilities,
-            composite sentiment tilt score \in [-1.0, 1.0], and qualitative sentiment label.
+            composite sentiment tilt score in [-1.0, 1.0], and qualitative sentiment label.
         """
         texts = []
         for h in headlines:

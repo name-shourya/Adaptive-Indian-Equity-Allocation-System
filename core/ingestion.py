@@ -1,12 +1,19 @@
 import os
 import logging
 import datetime
-import requests
+import urllib.request
+import urllib.parse
 import numpy as np
 import pandas as pd
-import yfinance as yf
-from bs4 import BeautifulSoup
-from typing import List, Dict, Tuple, Optional
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -26,7 +33,7 @@ DEFAULT_STOCKS = [
 class MarketDataIngestor:
     """
     Handles ingestion of historical market OHLCV price data via yfinance
-    and financial news scraping via BeautifulSoup/RSS for news sentiment.
+    and financial news scraping via urllib/BeautifulSoup/RSS for news sentiment.
     """
 
     def __init__(self, data_dir: str = "data"):
@@ -45,15 +52,6 @@ class MarketDataIngestor:
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Fetches historical price data and computes daily log returns.
-        
-        Parameters:
-            tickers: List of Yahoo Finance ticker symbols
-            period: Lookback period (e.g., '1y', '3y', '5y')
-            interval: Data frequency ('1d')
-            force_refresh: Force fresh download from yfinance
-            
-        Returns:
-            Tuple of (Close Prices DataFrame, Daily Log Returns DataFrame)
         """
         if tickers is None:
             tickers = list(DEFAULT_TICKERS.values())
@@ -64,35 +62,36 @@ class MarketDataIngestor:
             logger.info(f"Loading cached market data from {raw_cache_path}")
             df_prices = pd.read_csv(raw_cache_path, index_col=0, parse_dates=True)
         else:
-            logger.info(f"Downloading historical market data for tickers: {tickers}")
-            try:
-                data = yf.download(tickers, period=period, interval=interval, progress=False)
-                if isinstance(data.columns, pd.MultiIndex):
-                    if 'Adj Close' in data.columns.levels[0]:
-                        df_prices = data['Adj Close']
-                    elif 'Close' in data.columns.levels[0]:
-                        df_prices = data['Close']
+            if yf is not None:
+                logger.info(f"Downloading historical market data for tickers: {tickers}")
+                try:
+                    data = yf.download(tickers, period=period, interval=interval, progress=False)
+                    if isinstance(data.columns, pd.MultiIndex):
+                        if 'Adj Close' in data.columns.levels[0]:
+                            df_prices = data['Adj Close']
+                        elif 'Close' in data.columns.levels[0]:
+                            df_prices = data['Close']
+                        else:
+                            df_prices = data
                     else:
-                        df_prices = data
-                else:
-                    df_prices = data[['Close']] if 'Close' in data.columns else data
-                    df_prices.columns = tickers
+                        df_prices = data[['Close']] if 'Close' in data.columns else data
+                        df_prices.columns = tickers
 
-                # Handle single ticker case formatting
-                if isinstance(df_prices, pd.Series):
-                    df_prices = df_prices.to_frame(name=tickers[0])
-                
-                # Clean missing data
-                df_prices = df_prices.ffill().bfill().dropna()
-                df_prices.to_csv(raw_cache_path)
-            except Exception as e:
-                logger.error(f"Error downloading data from yfinance: {e}")
+                    if isinstance(df_prices, pd.Series):
+                        df_prices = df_prices.to_frame(name=tickers[0])
+
+                    df_prices = df_prices.ffill().bfill().dropna()
+                    df_prices.to_csv(raw_cache_path)
+                except Exception as e:
+                    logger.error(f"Error downloading data from yfinance: {e}")
+                    df_prices = self._generate_synthetic_prices(tickers, period)
+            else:
+                logger.info("yfinance package not installed. Generating synthetic baseline market data.")
                 df_prices = self._generate_synthetic_prices(tickers, period)
 
         # Compute log returns
         returns = np.log(df_prices / df_prices.shift(1)).dropna()
         
-        # Save processed returns
         processed_path = os.path.join(self.processed_dir, "processed_returns.csv")
         returns.to_csv(processed_path)
 
@@ -101,11 +100,9 @@ class MarketDataIngestor:
     def fetch_latest_news(self, query: str = "Nifty Indian Equity Market Economy", limit: int = 15) -> List[Dict[str, str]]:
         """
         Scrapes financial news headlines via RSS/Google News for Indian market news.
-        
-        Returns:
-            List of dicts containing headline, source, pubDate, and link.
         """
-        rss_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=en-IN&gl=IN&ceid=IN:en"
+        encoded_query = urllib.parse.quote(query)
+        rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-IN&gl=IN&ceid=IN:en"
         headlines = []
 
         headers = {
@@ -113,9 +110,12 @@ class MarketDataIngestor:
         }
 
         try:
-            response = requests.get(rss_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content, features="xml")
+            req = urllib.request.Request(rss_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                content = resp.read()
+
+            if BeautifulSoup is not None:
+                soup = BeautifulSoup(content, features="xml")
                 items = soup.find_all("item")
                 for item in items[:limit]:
                     title = item.title.text if item.title else ""
@@ -129,14 +129,13 @@ class MarketDataIngestor:
                             "pub_date": pub_date,
                             "link": link
                         })
-            logger.info(f"Scraped {len(headlines)} headlines from Google News RSS")
+                logger.info(f"Scraped {len(headlines)} headlines from Google News RSS")
         except Exception as e:
             logger.warning(f"Could not scrape RSS news feed: {e}. Utilizing cached/mock headlines.")
 
         if not headlines:
             headlines = self._get_fallback_headlines()
 
-        # Cache headlines
         raw_news_path = os.path.join(self.raw_dir, "latest_news.csv")
         pd.DataFrame(headlines).to_csv(raw_news_path, index=False)
 
