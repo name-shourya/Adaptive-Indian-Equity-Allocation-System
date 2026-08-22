@@ -1,4 +1,4 @@
-"""RiskAdjusted Tactical Rebalancer (RATR) — Streamlit Dashboard.
+"""Adaptive-Indian-Equity-Allocation-System (AIEAS) — Streamlit Dashboard.
 
 Orchestrates the backend quantitative pipeline:
   MarketDataFeed  →  VolatilityModeler  →  SharpeOptimizer
@@ -293,7 +293,7 @@ def inject_terminal_css() -> None:
 def setup_page() -> None:
     """Configure Streamlit page metadata and inject terminal CSS."""
     st.set_page_config(
-        page_title="RATR // BLOOMBERG TERMINAL",
+        page_title="AIEAS // BLOOMBERG TERMINAL",
         page_icon="",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -420,7 +420,7 @@ def main() -> None:
 
     # ── Header ────────────────────────────────────────────────────────────
     st.markdown(
-        '<div class="main-title">RISKADJUSTED TACTICAL REBALANCER [RATR]</div>'
+        '<div class="main-title">ADAPTIVE INDIAN EQUITY ALLOCATION SYSTEM [AIEAS]</div>'
         '<div class="sub-title">SYSTEM: GJR-GARCH ALLOCATION ROUTER // '
         "STATUS: ONLINE</div>",
         unsafe_allow_html=True,
@@ -429,7 +429,7 @@ def main() -> None:
     # ══════════════════════════════════════════════════════════════════════
     # Sidebar — user inputs
     # ══════════════════════════════════════════════════════════════════════
-    st.sidebar.markdown("### RATR CONFIGURATION")
+    st.sidebar.markdown("### AIEAS CONFIGURATION")
 
     # 1. Portfolio file uploader
     uploaded_file = st.sidebar.file_uploader(
