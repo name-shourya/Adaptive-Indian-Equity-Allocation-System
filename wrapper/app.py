@@ -75,11 +75,19 @@ def inject_terminal_css() -> None:
         span[class*="material-symbols"],
         span[class*="material-icons"],
         [data-testid="stSidebar"] .material-symbols-rounded,
-        [data-testid="stHeader"] .material-symbols-rounded {
+        [data-testid="stHeader"] .material-symbols-rounded,
+        [data-testid="stIconMaterial"],
+        .stIconMaterial {
             font-family: 'Material Symbols Rounded', 'Material Icons' !important;
-            font-style: normal;
-            -webkit-font-feature-settings: 'liga';
-            font-feature-settings: 'liga';
+            font-style: normal !important;
+            font-weight: normal !important;
+            -webkit-font-feature-settings: 'liga' !important;
+            font-feature-settings: 'liga' !important;
+            text-transform: none !important;
+            letter-spacing: normal !important;
+            word-wrap: normal !important;
+            white-space: nowrap !important;
+            direction: ltr !important;
         }
 
         .stApp {
@@ -154,9 +162,11 @@ def inject_terminal_css() -> None:
         }
         /* Hide the broken Material Icon "upload" text inside dropzone */
         [data-testid="stFileUploadDropzone"] [data-testid="stIconMaterial"],
+        [data-testid="stFileUploadDropzone"] .stIconMaterial,
         [data-testid="stFileUploadDropzone"] span.material-symbols-rounded,
         [data-testid="stFileUploadDropzone"] span[class*="material-symbols"],
-        [data-testid="stFileUploadDropzone"] span[class*="material-icons"] {
+        [data-testid="stFileUploadDropzone"] span[class*="material-icons"],
+        [data-testid="stFileUploadDropzone"] svg {
             display: none !important;
         }
         [data-testid="stFileUploadDropzone"] span,
@@ -895,7 +905,7 @@ def main() -> None:
         4. **SMART CAPITAL ROUTING**
            - *SIP_FIRST* — Proportional deployment into underweight assets;
              strictly zero sell orders.
-           - *TACTICAL* — Evaluates drift vs threshold and triggers
+           - *TACTICAL* — Evaluates drift (the % difference between current and target weights) vs threshold and triggers
              disciplined sell/buy orders to close the gap.
         5. **EXECUTION GUARDRAILS** — Integer share flooring, micro-trade
            suppression (< INR 1,000), and residual-cash tracking.
