@@ -1,12 +1,9 @@
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any, Union
+from typing import Dict, List, Tuple, Optional, Any
 
-try:
-    from scipy.optimize import minimize
-except ImportError:
-    minimize = None
+from scipy.optimize import minimize
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -189,7 +186,7 @@ class PortfolioOptimizer:
             Omega[0, 0] = 1e-4
 
         try:
-            sigma_inv = np.linalg.inv(tau * cov_matrix)
+            sigma_inv = np.linalg.inv(tau * cov_matrix)  # type: ignore[arg-type]
             omega_inv = np.linalg.inv(Omega)
             middle_term = np.linalg.inv(sigma_inv + np.dot(np.dot(P.T, omega_inv), P))
             right_term = np.dot(sigma_inv, pi) + np.dot(np.dot(P.T, omega_inv), Q)
@@ -206,7 +203,7 @@ class PortfolioOptimizer:
 
         opt_res["implied_equilibrium_returns"] = dict(zip(asset_names, pi))
         opt_res["black_litterman_returns"] = dict(zip(asset_names, mu_bl))
-        opt_res["sentiment_tilt_applied"] = float(tilt)
+        opt_res["sentiment_tilt_applied"] = tilt
 
         return opt_res
 
@@ -253,7 +250,7 @@ class PortfolioOptimizer:
             opt_w = init_weights
             p_return = float(np.dot(opt_w, expected_returns))
             p_vol = float(np.sqrt(np.dot(opt_w.T, np.dot(cov_matrix, opt_w))))
-            sharpe = float((p_return - self.rf) / p_vol) if p_vol > 0 else 0.0
+            sharpe = (p_return - self.rf) / p_vol if p_vol > 0 else 0.0
             return {
                 "success": True,
                 "weights": dict(zip(asset_names, opt_w)),
@@ -283,7 +280,7 @@ class PortfolioOptimizer:
 
             p_return = float(np.dot(opt_w, expected_returns))
             p_vol = float(np.sqrt(np.dot(opt_w.T, np.dot(cov_matrix, opt_w))))
-            sharpe = float((p_return - self.rf) / p_vol) if p_vol > 0 else 0.0
+            sharpe = (p_return - self.rf) / p_vol if p_vol > 0 else 0.0
 
             return {
                 "success": res.success,

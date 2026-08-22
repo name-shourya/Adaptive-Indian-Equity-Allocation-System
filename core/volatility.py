@@ -1,12 +1,9 @@
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Tuple, Optional, Union
+from typing import Dict, Any, Tuple
 
-try:
-    from arch import arch_model
-except ImportError:
-    arch_model = None
+from arch import arch_model
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,7 +22,7 @@ class VolatilityModeler:
         p: int = 1,
         o: int = 1,
         q: int = 1,
-        dist: str = "StudentsT",
+        dist: str = "studentst",
         scale_factor: float = 100.0,
     ) -> None:
         """Initializes the VolatilityModeler with GJR-GARCH parameters.
@@ -34,7 +31,7 @@ class VolatilityModeler:
             p: Order of symmetric GARCH innovation term.
             o: Order of asymmetric leverage term (GJR component).
             q: Order of lagged conditional variance term.
-            dist: Error distribution specification ('StudentsT' or 't', 'normal').
+            dist: Error distribution specification ('studentst', 't', 'normal').
             scale_factor: Multiplier to scale returns to percentage for solver stability.
         """
         self.p = p
@@ -262,12 +259,13 @@ class VolatilityModeler:
             }
 
         var = np.zeros(n)
-        var[0] = clean_ret.var() if clean_ret.var() > 0 else 0.0001
+        initial_var = float(clean_ret.var())  # type: ignore[arg-type]
+        var[0] = initial_var if initial_var > 0 else 0.0001
 
         for t in range(1, n):
             var[t] = lambda_param * var[t - 1] + (1.0 - lambda_param) * (clean_ret.iloc[t - 1] ** 2)
 
-        daily_vol = pd.Series(np.sqrt(var), index=clean_ret.index)
+        daily_vol = pd.Series(np.sqrt(var), index=clean_ret.index, dtype=float)
         ann_vol = daily_vol * np.sqrt(252)
 
         return {

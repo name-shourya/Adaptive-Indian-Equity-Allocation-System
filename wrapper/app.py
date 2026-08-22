@@ -1,422 +1,908 @@
-import sys
+"""RiskAdjusted Tactical Rebalancer (RATR) — Streamlit Dashboard.
+
+Orchestrates the backend quantitative pipeline:
+  MarketDataFeed  →  VolatilityModeler  →  SharpeOptimizer
+  PortfolioParser →  AllocationRouter   →  Trade Execution Plan
+"""
+
+import logging
 import os
+import sys
+from typing import Any, Dict, List, Optional, Union
 
-# Ensure project root is in sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# ---------------------------------------------------------------------------
+# Ensure the project root is importable regardless of working directory
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-import datetime
 import numpy as np
 import pandas as pd
-import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 
-from core.ingestion import MarketDataIngestor
-from core.volatility import VolatilityEngine
-from core.sentiment import SentimentEngine
-from core.optimization import PortfolioOptimizer
-from backtest.walk_forward import WalkForwardBacktester
+from core.ingestion import MarketDataFeed, MarketDataIngestor
+from core.optimization import SharpeOptimizer
+from core.volatility import VolatilityModeler
 from wrapper.parser import PortfolioParser
 from wrapper.router import AllocationRouter
 
-# Streamlit Page Setup
-st.set_page_config(
-    page_title="Adaptive Indian Equity Allocation System",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s — %(levelname)s — %(message)s",
 )
+logger = logging.getLogger(__name__)
 
-# Custom Executive Dark Aesthetic CSS
-st.markdown("""
-<style>
-    /* Dark Theme Custom Palette */
-    .stApp {
-        background-color: #0d1117;
-        color: #c9d1d9;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    }
-    
-    /* Header Styling */
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 800;
-        background: linear-gradient(90deg, #58a6ff 0%, #bc8cff 50%, #3fb950 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
-    }
-    .sub-header {
-        font-size: 1.0rem;
-        color: #8b949e;
-        margin-bottom: 1.5rem;
-    }
-    
-    /* Executive Metric Card */
-    .metric-card {
-        background: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        padding: 1.2rem;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
-    .metric-title {
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #8b949e;
-        margin-bottom: 0.4rem;
-    }
-    .metric-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #58a6ff;
-    }
-    .metric-delta {
-        font-size: 0.9rem;
-        font-weight: 600;
-        margin-top: 0.2rem;
-    }
-    .delta-positive { color: #3fb950; }
-    .delta-negative { color: #f85149; }
-    
-    /* Sidebar Customization */
-    section[data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
-    }
-    
-    /* Streamlit Tab Styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #161b22;
-        border-radius: 8px;
-        color: #8b949e;
-        border: 1px solid #30363d;
-        padding: 8px 16px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #1f6feb !important;
-        color: #ffffff !important;
-        border-color: #58a6ff !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+# ---------------------------------------------------------------------------
+# Mock Nifty 50 universe (10 highly-liquid constituents for fast dev runs)
+# ---------------------------------------------------------------------------
+MOCK_NIFTY_UNIVERSE: List[str] = [
+    "RELIANCE.NS",
+    "TCS.NS",
+    "HDFCBANK.NS",
+    "INFY.NS",
+    "ICICIBANK.NS",
+    "BHARTIARTL.NS",
+    "ITC.NS",
+    "LTIM.NS",
+    "KOTAKBANK.NS",
+    "LT.NS",
+]
 
-# Cache Heavy Pipeline Engines
-@st.cache_resource
-def load_engines():
-    ingestor = MarketDataIngestor()
-    vol_engine = VolatilityEngine()
-    sentiment_engine = SentimentEngine(use_transformer=False)  # Fast mode
-    optimizer = PortfolioOptimizer()
-    parser = PortfolioParser()
-    router = AllocationRouter()
-    return ingestor, vol_engine, sentiment_engine, optimizer, parser, router
 
-ingestor, vol_engine, sentiment_engine, optimizer, parser, router = load_engines()
+# ═══════════════════════════════════════════════════════════════════════════
+# Bloomberg Terminal CSS Injection
+# ═══════════════════════════════════════════════════════════════════════════
+def inject_terminal_css() -> None:
+    """Inject Bloomberg Terminal dark-theme CSS overrides via st.markdown."""
+    st.markdown(
+        """
+        <style>
+        /* ── Global Terminal Override ───────────────────────────────── */
+        * {
+            font-family: 'Courier New', Courier, monospace !important;
+            border-radius: 0px !important;
+        }
 
-# Header Banner
-st.markdown('<div class="main-header">Adaptive Indian Equity Allocation System</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Dynamic Quantitative Asset Allocation | GJR-GARCH Volatility | FinBERT Sentiment | Black-Litterman SLSQP</div>', unsafe_allow_html=True)
+        /* ── Restore Material Icon Ligatures ────────────────────────── */
+        .material-symbols-rounded,
+        .material-icons,
+        span[class*="material-symbols"],
+        span[class*="material-icons"],
+        [data-testid="stSidebar"] .material-symbols-rounded,
+        [data-testid="stHeader"] .material-symbols-rounded {
+            font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+            font-style: normal;
+            -webkit-font-feature-settings: 'liga';
+            font-feature-settings: 'liga';
+        }
 
-# Sidebar Controls
-st.sidebar.image("https://img.icons8.com/color/96/000000/line-chart.png", width=64)
-st.sidebar.header("⚙️ Quantitative Parameters")
+        .stApp {
+            background-color: #000000 !important;
+            color: #FF9900 !important;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #000000 !important;
+        }
+        section[data-testid="stSidebar"] * {
+            color: #FF9900 !important;
+        }
+        h1, h2, h3, h4, h5, h6, p, label, div {
+            color: #FF9900 !important;
+        }
 
-lookback_period = st.sidebar.selectbox("Market Data Lookback", ["1y", "3y", "5y"], index=1)
-rf_rate = st.sidebar.slider("Risk-Free Rate (RBI Repo %)", min_value=4.0, max_value=9.0, value=6.5, step=0.25) / 100.0
-sip_cash_inflow = st.sidebar.number_input("Monthly SIP Inflow (₹)", min_value=5000, max_value=1000000, value=50000, step=5000)
+        /* ── Sidebar Labels ────────────────────────────────────────── */
+        section[data-testid="stSidebar"] label {
+            font-size: 0.78rem !important;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: #FF9900 !important;
+            margin-bottom: 0.15rem !important;
+        }
+        section[data-testid="stSidebar"] .stMarkdown h3 {
+            border-bottom: 1px solid #333333;
+            padding-bottom: 0.3rem;
+            margin-bottom: 0.8rem !important;
+        }
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Asset Allocation Constraints")
-min_eq, max_eq = st.sidebar.slider("Equity Range (%)", 10, 90, (20, 80))
-min_gold, max_gold = st.sidebar.slider("Gold Range (%)", 0, 40, (0, 25))
-min_debt, max_debt = st.sidebar.slider("Debt Range (%)", 5, 60, (5, 40))
+        /* ── Input Borders ─────────────────────────────────────────── */
+        .stTextInput > div > div,
+        .stSelectbox > div > div,
+        .stNumberInput > div > div,
+        div[data-testid="stDataFrame"],
+        div[data-testid="stMetric"] {
+            border: 1px solid #333333 !important;
+            background-color: #000000 !important;
+            border-radius: 0px !important;
+        }
 
-custom_bounds = {
-    "Equity": (min_eq / 100.0, max_eq / 100.0),
-    "Gold": (min_gold / 100.0, max_gold / 100.0),
-    "Debt": (min_debt / 100.0, max_debt / 100.0),
-}
+        /* ── File Uploader — Full Fix ──────────────────────────────── */
+        .stFileUploader {
+            margin-bottom: 0.8rem !important;
+        }
+        .stFileUploader > div,
+        .stFileUploader > div > div,
+        .stFileUploader > section,
+        .stFileUploader label,
+        section[data-testid="stSidebar"] .stFileUploader,
+        section[data-testid="stSidebar"] .stFileUploader > div,
+        section[data-testid="stSidebar"] .stFileUploader > div > div {
+            border: none !important;
+            background-color: #000000 !important;
+            background: #000000 !important;
+            padding: 0 !important;
+        }
+        [data-testid="stFileUploadDropzone"],
+        section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] {
+            border: 1px dashed #555555 !important;
+            border-radius: 0px !important;
+            background-color: #000000 !important;
+            background: #000000 !important;
+            padding: 0.6rem 0.8rem !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+        }
+        [data-testid="stFileUploadDropzone"] *,
+        section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] * {
+            background-color: #000000 !important;
+            background: #000000 !important;
+        }
+        /* Hide the broken Material Icon "upload" text inside dropzone */
+        [data-testid="stFileUploadDropzone"] [data-testid="stIconMaterial"],
+        [data-testid="stFileUploadDropzone"] span.material-symbols-rounded,
+        [data-testid="stFileUploadDropzone"] span[class*="material-symbols"],
+        [data-testid="stFileUploadDropzone"] span[class*="material-icons"] {
+            display: none !important;
+        }
+        [data-testid="stFileUploadDropzone"] span,
+        [data-testid="stFileUploadDropzone"] small,
+        [data-testid="stFileUploadDropzone"] p,
+        [data-testid="stFileUploadDropzone"] div {
+            color: #888888 !important;
+            font-size: 0.75rem !important;
+        }
+        [data-testid="stFileUploadDropzone"] button,
+        section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] button {
+            background-color: #000000 !important;
+            background: #000000 !important;
+            color: #FF9900 !important;
+            border: 1px solid #FF9900 !important;
+            font-size: 0.75rem !important;
+            padding: 0.15rem 0.5rem !important;
+        }
 
-# Fetch Market Data
-@st.cache_data(ttl=3600)
-def get_market_data(period):
-    tickers = ["^NSEI", "GOLDBEES.NS", "LIQUIDBEES.NS"]
-    prices, returns, _ = ingestor.fetch_ohlcv(tickers=tickers, period=period)
-    returns.columns = ["Equity (Nifty 50)", "Gold ETF", "Debt / Liquid"]
-    return prices, returns
+        /* ── Download Button (sidebar) ─────────────────────────────── */
+        section[data-testid="stSidebar"] .stDownloadButton > button {
+            background-color: #000000 !important;
+            color: #FF9900 !important;
+            border: 1px solid #FF9900 !important;
+            font-size: 0.75rem !important;
+            padding: 0.3rem 0.6rem !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            width: 100% !important;
+        }
+        section[data-testid="stSidebar"] .stDownloadButton > button:hover {
+            background-color: #FF9900 !important;
+            color: #000000 !important;
+        }
 
-prices, returns = get_market_data(lookback_period)
+        /* ── Sidebar Dividers ──────────────────────────────────────── */
+        section[data-testid="stSidebar"] hr {
+            border-color: #333333 !important;
+            margin: 0.6rem 0 !important;
+        }
 
-# Compute Current Volatility & Sentiment
-equity_returns = returns.iloc[:, 0]
-garch_fit = vol_engine.fit_gjr_garch(equity_returns)
-vol_forecasts = vol_engine.forecast_volatility(garch_fit)
+        /* ── Metric elements ───────────────────────────────────────── */
+        div[data-testid="stMetric"] {
+            padding: 0.6rem 0.8rem;
+        }
+        div[data-testid="stMetric"] label {
+            color: #888888 !important;
+        }
+        div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+            color: #FF9900 !important;
+        }
 
-headlines = ingestor.fetch_latest_news()
-sentiment_res = sentiment_engine.analyze_headlines(headlines)
+        /* ── Tabs ──────────────────────────────────────────────────── */
+        button[data-baseweb="tab"] {
+            color: #888888 !important;
+        }
+        button[data-baseweb="tab"][aria-selected="true"] {
+            color: #FF9900 !important;
+            border-bottom: 2px solid #FF9900 !important;
+        }
 
-# Black-Litterman Optimal Allocation
-optimizer.rf = rf_rate
-opt_res = optimizer.optimize_black_litterman(
-    returns=returns,
-    sentiment_score=sentiment_res["composite_score"],
-    gjr_vol=vol_forecasts,
-    custom_bounds=custom_bounds
-)
+        /* ── Buttons — Pure White / Black ──────────────────────────── */
+        .stButton > button {
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+            border: 1px solid #FFFFFF !important;
+            border-radius: 0px !important;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .stButton > button:hover,
+        .stButton > button:focus,
+        .stButton > button:active,
+        .stButton > button:visited {
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+            border: 1px solid #FFFFFF !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
 
-target_weights = opt_res["weights"]
+        /* ── Sidebar Toggle Button (Advanced Settings) ─────────────── */
+        section[data-testid="stSidebar"] .stButton > button {
+            background-color: #000000 !important;
+            color: #FF9900 !important;
+            border: 1px solid #333333 !important;
+            font-weight: 600;
+            font-size: 0.78rem !important;
+            letter-spacing: 0.5px;
+            padding: 0.35rem 0.6rem !important;
+        }
+        section[data-testid="stSidebar"] .stButton > button:hover {
+            border-color: #FF9900 !important;
+        }
 
-# Executive Metric Banner Cards
-col1, col2, col3, col4 = st.columns(4)
+        /* ── Slider ────────────────────────────────────────────────── */
+        section[data-testid="stSidebar"] .stSlider label {
+            color: #FF9900 !important;
+        }
+        section[data-testid="stSidebar"] .stSlider div[data-testid="stTickBarMin"],
+        section[data-testid="stSidebar"] .stSlider div[data-testid="stTickBarMax"] {
+            color: #888888 !important;
+        }
 
-with col1:
-    ann_vol_21d = vol_forecasts.get(21, 0.15) * 100
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">GJR-GARCH Volatility (21D)</div>
-        <div class="metric-value">{ann_vol_21d:.2f}%</div>
-        <div class="metric-delta delta-{'negative' if ann_vol_21d > 18 else 'positive'}">
-            Model: {garch_fit['model_name']}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        /* ── Alert boxes ───────────────────────────────────────────── */
+        div[data-testid="stAlert"] {
+            background-color: #0a0a0a !important;
+            border: 1px solid #333333 !important;
+            color: #FF9900 !important;
+            border-radius: 0px !important;
+        }
 
-with col2:
-    sent_score = sentiment_res["composite_score"]
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">FinBERT Market Sentiment</div>
-        <div class="metric-value">{sentiment_res['label']}</div>
-        <div class="metric-delta delta-{'positive' if sent_score > 0 else 'negative'}">
-            Tilt Score: {sent_score:+.2f}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        /* ── Expander (clean terminal look) ─────────────────────────── */
+        details[data-testid="stExpander"] {
+            border: 1px solid #333333 !important;
+            background-color: #000000 !important;
+            border-radius: 0px !important;
+        }
+        details[data-testid="stExpander"] summary {
+            color: #FF9900 !important;
+            font-size: 0.78rem !important;
+            padding: 0.4rem 0.6rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-with col3:
-    target_eq_pct = target_weights.get("Equity (Nifty 50)", 0.60) * 100
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Optimal Equity Target</div>
-        <div class="metric-value">{target_eq_pct:.1f}%</div>
-        <div class="metric-delta delta-positive">Black-Litterman Max-Sharpe</div>
-    </div>
-    """, unsafe_allow_html=True)
 
-with col4:
-    opt_sharpe = opt_res["sharpe_ratio"]
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Expected Sharpe Ratio</div>
-        <div class="metric-value">{opt_sharpe:.2f}</div>
-        <div class="metric-delta delta-positive">Rf = {rf_rate*100:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# Page / Theme Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+def setup_page() -> None:
+    """Configure Streamlit page metadata and inject terminal CSS."""
+    st.set_page_config(
+        page_title="RATR // BLOOMBERG TERMINAL",
+        page_icon="",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
 
-st.markdown("<br>", unsafe_allow_html=True)
+    # Load external CSS file
+    css_file = os.path.join(os.path.dirname(__file__), "style.css")
+    if os.path.exists(css_file):
+        with open(css_file, encoding="utf-8") as f:
+            st.markdown(f"<style>\n{f.read()}\n</style>", unsafe_allow_html=True)
 
-# Main Dashboard Navigation Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Optimal Asset Allocation",
-    "⚡ GJR-GARCH Volatility Engine",
-    "📰 FinBERT Sentiment Radar",
-    "🔄 Portfolio Rebalancer & SIP",
-    "🧪 Walk-Forward Backtest Simulator"
-])
+    # Inject inline terminal CSS overrides
+    inject_terminal_css()
 
-# TAB 1: Optimal Asset Allocation
-with tab1:
-    col_a, col_b = st.columns([1, 1])
-    
-    with col_a:
-        st.subheader("Target Asset Weights")
-        df_weights = pd.DataFrame([
-            {"Asset Class": k, "Optimal Weight (%)": round(v * 100, 2)}
-            for k, v in target_weights.items()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper — colour-coded trade-plan table (Bloomberg text-colour scheme)
+# ═══════════════════════════════════════════════════════════════════════════
+def style_trade_plan(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    """Return a Styler with Bloomberg terminal text colours for actions.
+
+    BUY  → Neon Green (#00FF00)
+    SELL → Pure Red   (#FF0000)
+    HOLD → Gray       (#888888)
+    Background: Black  (#000000), Default text: Amber (#FF9900)
+    """
+
+    def _row_colour(row: pd.Series) -> List[str]:
+        action = str(row.get("Action", "")).upper()
+        base = "background-color: #000000;"
+        if action == "BUY":
+            return [
+                f"{base} color: #00FF00; font-weight: 600;"
+            ] * len(row)
+        if action == "SELL":
+            return [
+                f"{base} color: #FF0000; font-weight: 600;"
+            ] * len(row)
+        return [f"{base} color: #888888;"] * len(row)
+
+    fmt = {}
+    for col, spec in [
+        ("Current_Price", "₹{:,.2f}"),
+        ("Current_Value", "₹{:,.2f}"),
+        ("Target_Value", "₹{:,.2f}"),
+        ("Trade_Value_INR", "₹{:,.2f}"),
+        ("Post_Trade_Value", "₹{:,.2f}"),
+        ("Current_Weight", "{:.2%}"),
+        ("Target_Weight", "{:.2%}"),
+        ("Drift", "{:+.2%}"),
+        ("Post_Trade_Weight", "{:.2%}"),
+    ]:
+        if col in df.columns:
+            fmt[col] = spec
+
+    return (
+        df.style
+        .apply(_row_colour, axis=1)
+        .format(fmt)
+        .set_properties(**{
+            "background-color": "#000000",
+            "color": "#FF9900",
+            "font-family": "'Courier New', Courier, monospace",
+        })
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper — weight-comparison bar chart (Bloomberg terminal palette)
+# ═══════════════════════════════════════════════════════════════════════════
+def render_weight_comparison(plan_df: pd.DataFrame) -> go.Figure:
+    """Grouped bar chart: Current vs Target vs Post-Trade weights."""
+    chart = plan_df.copy()
+    chart["Current %"] = chart["Current_Weight"] * 100.0
+    chart["Target %"] = chart["Target_Weight"] * 100.0
+    chart["Post-Trade %"] = chart["Post_Trade_Weight"] * 100.0
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=chart["Ticker"], y=chart["Current %"],
+                         name="CURRENT", marker_color="#00FFFF"))
+    fig.add_trace(go.Bar(x=chart["Ticker"], y=chart["Target %"],
+                         name="TARGET [MAX SHARPE]", marker_color="#FF9900"))
+    fig.add_trace(go.Bar(x=chart["Ticker"], y=chart["Post-Trade %"],
+                         name="POST-TRADE", marker_color="#00FF00"))
+
+    fig.update_layout(
+        title="ALLOCATION: CURRENT / TARGET / POST-TRADE (%)",
+        barmode="group",
+        paper_bgcolor="black",
+        plot_bgcolor="black",
+        font=dict(color="#FF9900",
+                  family="'Courier New', Courier, monospace"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    xanchor="right", x=1, font=dict(size=11, color="#FF9900")),
+        xaxis=dict(gridcolor="#222222", title="TICKER",
+                   tickfont=dict(color="#FF9900")),
+        yaxis=dict(gridcolor="#222222", title="WEIGHT (%)",
+                   tickfont=dict(color="#FF9900")),
+        margin=dict(l=40, r=20, t=60, b=40),
+        height=420,
+    )
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Helper — metric card HTML snippet
+# ═══════════════════════════════════════════════════════════════════════════
+def _card(label: str, value: str, badge_text: str, badge_cls: str) -> str:
+    return (
+        '<div class="metric-card">\n'
+        f'    <div class="metric-label">{label}</div>\n'
+        f'    <div class="metric-value">{value}</div>\n'
+        f'    <span class="badge {badge_cls}">{badge_text}</span>\n'
+        '</div>'
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Main Application
+# ═══════════════════════════════════════════════════════════════════════════
+def main() -> None:
+    setup_page()
+
+    # ── Header ────────────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="main-title">RISKADJUSTED TACTICAL REBALANCER [RATR]</div>'
+        '<div class="sub-title">SYSTEM: GJR-GARCH ALLOCATION ROUTER // '
+        "STATUS: ONLINE</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Sidebar — user inputs
+    # ══════════════════════════════════════════════════════════════════════
+    st.sidebar.markdown("### RATR CONFIGURATION")
+
+    # 1. Portfolio file uploader
+    uploaded_file = st.sidebar.file_uploader(
+        "UPLOAD PORTFOLIO (CSV / EXCEL)",
+        type=["csv", "xlsx", "xls"],
+        help="Columns: Ticker, Quantity, Buy_Price, [Current_Price]. "
+             "If omitted, an empty portfolio (initial cash deployment) is assumed.",
+    )
+
+    # 2. Sample template — direct download button (no expander)
+    sample_parser = PortfolioParser()
+    sample_csv_path = sample_parser.create_sample_portfolio_csv()
+    with open(sample_csv_path, "r", encoding="utf-8") as fh:
+        csv_bytes = fh.read().encode("utf-8")
+    st.sidebar.download_button(
+        label="DOWNLOAD SAMPLE TEMPLATE",
+        data=csv_bytes,
+        file_name="sample_portfolio.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    st.sidebar.markdown("---")
+
+    # 3. Cash budget
+    cash_budget = st.sidebar.number_input(
+        "Fresh Cash Budget (INR)",
+        min_value=0.0,
+        value=50_000.0,
+        step=5_000.0,
+        format="%.2f",
+        help="Additional capital available for deployment or SIP inflows.",
+    )
+
+    # 4. Rebalance mode
+    rebalance_mode: str = st.sidebar.selectbox(
+        "Rebalance Mode",
+        options=["SIP_FIRST", "TACTICAL"],
+        index=0,
+        help=(
+            "SIP_FIRST — deploys cash into under-allocated assets (zero sells). "
+            "TACTICAL — buys & sells if drift exceeds threshold."
+        ),
+    )
+
+    st.sidebar.markdown("---")
+
+    # 5. Advanced settings — toggle button (not expander)
+    if "show_advanced" not in st.session_state:
+        st.session_state["show_advanced"] = False
+
+    if st.sidebar.button(
+        "ADVANCED RISK & MODEL SETTINGS",
+        use_container_width=True,
+    ):
+        st.session_state["show_advanced"] = not st.session_state["show_advanced"]
+
+    if st.session_state["show_advanced"]:
+        drift_threshold_pct = st.sidebar.slider(
+            "Tactical Drift Threshold (%)", 1.0, 15.0, 5.0, 0.5,
+            help="Max acceptable drift before triggering tactical sell orders.",
+        )
+        drift_threshold = drift_threshold_pct / 100.0
+
+        min_trade_inr = st.sidebar.number_input(
+            "Min Trade Threshold (INR)", min_value=100.0,
+            value=1000.0, step=250.0,
+            help="Trades below this rupee amount are suppressed as HOLD.",
+        )
+
+        max_asset_cap = (
+            st.sidebar.slider("Max Single-Asset Cap (%)", 10.0, 40.0, 25.0, 1.0) / 100.0
+        )
+
+        asset_tolerance_pct = st.sidebar.slider(
+            "Asset Tolerance Band (%)", 0.0, 10.0, 2.5, 0.5,
+            help=(
+                "Per-asset weight deadband. Assets whose individual drift "
+                "falls within this band are held steady (HOLD) to reduce "
+                "micro-trade churn."
+            ),
+        )
+        asset_tolerance = asset_tolerance_pct / 100.0
+
+        lookback_period: str = st.sidebar.selectbox(
+            "Historical Lookback", ["3y", "2y", "1y", "5y"], index=0,
+            help="Window used to fit GJR-GARCH and estimate covariance.",
+        )
+    else:
+        drift_threshold = 0.05
+        min_trade_inr = 1000.0
+        max_asset_cap = 0.25
+        asset_tolerance = 0.025
+        lookback_period = "3y"
+
+    st.sidebar.markdown("---")
+
+    # 6. Run button
+    run_btn = st.sidebar.button(
+        "EXECUTE OPTIMIZATION",
+        type="primary",
+        use_container_width=True,
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Execution pipeline (triggered on button click)
+    # ══════════════════════════════════════════════════════════════════════
+    if run_btn:
+        try:
+            # ── Step 1/4  Market Data Ingestion ───────────────────────────
+            with st.spinner("STEP 1/4 — INGESTING OHLCV MARKET DATA ..."):
+                feed = MarketDataFeed()
+                df_prices, df_log_returns, _ = feed.fetch_ohlcv(
+                    tickers=MOCK_NIFTY_UNIVERSE,
+                    period=lookback_period,
+                    interval="1d",
+                )
+                if df_prices.empty or df_log_returns.empty:
+                    raise ValueError(
+                        "Market data feed returned empty price / return series."
+                    )
+                latest_prices_series: pd.Series = df_prices.iloc[-1]
+
+            # ── Step 2/4  GJR-GARCH Volatility Forecasts ─────────────────
+            with st.spinner("STEP 2/4 — FITTING GJR-GARCH VOLATILITY MODELS ..."):
+                vol_modeler = VolatilityModeler(dist="StudentsT")
+                garch_vol_forecasts: Dict[str, float] = {}
+
+                for ticker in MOCK_NIFTY_UNIVERSE:
+                    if ticker in df_log_returns.columns:
+                        series = df_log_returns[ticker].dropna()
+                        try:
+                            vol_forecast = vol_modeler.fit_predict_next_day(series)
+                            if np.isnan(vol_forecast) or vol_forecast <= 0:
+                                vol_forecast = float(series.std() * np.sqrt(252))
+                        except Exception as garch_err:
+                            logger.warning(
+                                "GJR-GARCH failed for %s: %s — using sample σ.",
+                                ticker, garch_err,
+                            )
+                            vol_forecast = float(series.std() * np.sqrt(252))
+                        garch_vol_forecasts[ticker] = vol_forecast
+                    else:
+                        garch_vol_forecasts[ticker] = 0.20  # sensible default
+
+            # ── Step 3/4  Max-Sharpe Optimisation ─────────────────────────
+            with st.spinner("STEP 3/4 — SOLVING FOR MAX SHARPE TARGET WEIGHTS ..."):
+                clean_returns = df_log_returns[MOCK_NIFTY_UNIVERSE].dropna()
+                cov_matrix: pd.DataFrame = clean_returns.cov() * 252.0
+                expected_returns: pd.Series = clean_returns.mean() * 252.0
+
+                optimizer = SharpeOptimizer(
+                    risk_free_rate=0.065, max_weight=max_asset_cap,
+                )
+                target_weights: pd.Series = optimizer.optimize(
+                    expected_returns=expected_returns,
+                    cov_matrix=cov_matrix,
+                )
+
+            # ── Step 4/4  Portfolio Parsing → Allocation Routing ──────────
+            with st.spinner("STEP 4/4 — ROUTING ALLOCATION PLAN ..."):
+                parser = PortfolioParser()
+
+                if uploaded_file is not None:
+                    parsed = parser.parse(
+                        uploaded_file, latest_prices=latest_prices_series,
+                    )
+                    current_portfolio_df: pd.DataFrame = parsed["holdings_df"]
+                    existing_val: float = parsed["total_market_value"]
+                    portfolio_summary: Dict[str, Any] = parsed["summary"]
+                else:
+                    current_portfolio_df = pd.DataFrame(
+                        columns=["Ticker", "Quantity", "Buy_Price", "Current_Price"],
+                    )
+                    existing_val = 0.0
+                    portfolio_summary = {
+                        "total_portfolio_value": 0.0,
+                        "total_investment_cost": 0.0,
+                        "total_pnl": 0.0,
+                        "total_pnl_pct": 0.0,
+                    }
+
+                router = AllocationRouter()
+                plan_df: pd.DataFrame = router.generate_allocation_plan(
+                    current_portfolio=current_portfolio_df,
+                    target_weights=target_weights,
+                    cash_budget=cash_budget,
+                    latest_prices=latest_prices_series,
+                    mode=rebalance_mode,
+                    drift_threshold=drift_threshold,
+                    min_trade_inr=min_trade_inr,
+                    asset_tolerance=asset_tolerance,
+                )
+
+            # ── Persist results in session state ──────────────────────────
+            st.session_state.update(
+                optimized=True,
+                plan_df=plan_df,
+                existing_val=existing_val,
+                cash_budget=cash_budget,
+                target_weights=target_weights,
+                garch_vol_forecasts=garch_vol_forecasts,
+                expected_returns=expected_returns,
+                cov_matrix=cov_matrix,
+                rebalance_mode=rebalance_mode,
+                portfolio_summary=portfolio_summary,
+                current_portfolio_df=current_portfolio_df,
+            )
+
+        except Exception as exc:
+            logger.error("Optimization run failed: %s", exc, exc_info=True)
+            st.error(f"FATAL: REBALANCER EXECUTION FAILED — {exc}")
+            return
+
+    # ══════════════════════════════════════════════════════════════════════
+    # UI — Results Display
+    # ══════════════════════════════════════════════════════════════════════
+    if st.session_state.get("optimized", False):
+        plan_df: pd.DataFrame = st.session_state["plan_df"]
+        existing_val: float = st.session_state["existing_val"]
+        budget: float = st.session_state["cash_budget"]
+        total_capital: float = existing_val + budget
+        residual_cash: float = plan_df.attrs.get("residual_cash", 0.0)
+        mode_exec: str = plan_df.attrs.get("mode_executed", rebalance_mode)
+        max_drift: float = plan_df.attrs.get("max_drift", 0.0)
+        buy_orders: int = plan_df.attrs.get("buy_orders_count", 0)
+        sell_orders: int = plan_df.attrs.get("sell_orders_count", 0)
+
+        # ── Executive metric cards ────────────────────────────────────────
+        st.markdown("### EXECUTIVE PORTFOLIO OVERVIEW")
+        c1, c2, c3, c4, c5 = st.columns(5)
+
+        with c1:
+            st.markdown(
+                _card("CURRENT VALUE", f"INR {existing_val:,.2f}",
+                      "PRE-REBALANCE", "badge-blue"),
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                _card("CASH BUDGET", f"INR {budget:,.2f}",
+                      "FRESH INFLOW", "badge-purple"),
+                unsafe_allow_html=True,
+            )
+        with c3:
+            st.markdown(
+                _card("TOTAL CAPITAL", f"INR {total_capital:,.2f}",
+                      "POST DEPLOYMENT", "badge-green"),
+                unsafe_allow_html=True,
+            )
+        with c4:
+            st.markdown(
+                _card("RESIDUAL CASH", f"INR {residual_cash:,.2f}",
+                      "UNALLOCATED FLOAT", "badge-blue"),
+                unsafe_allow_html=True,
+            )
+        with c5:
+            badge_cls = "badge-green" if mode_exec == "SIP_FIRST" else "badge-purple"
+            st.markdown(
+                _card("ACTIVE ROUTE", mode_exec,
+                      f"MAX DRIFT: {max_drift:.1%}", badge_cls),
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Tabbed analytical layout ──────────────────────────────────────
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "TRADE EXECUTION PLAN",
+            "ALLOCATION WEIGHT COMPARISON",
+            "GJR-GARCH & RISK MATRIX",
+            "HOLDINGS & P&L",
         ])
-        
-        fig_donut = px.pie(
-            df_weights,
-            names="Asset Class",
-            values="Optimal Weight (%)",
-            hole=0.5,
-            color_discrete_sequence=["#1f6feb", "#f1e05a", "#238636"]
-        )
-        fig_donut.update_layout(
-            paper_bgcolor="#161b22",
-            plot_bgcolor="#161b22",
-            font=dict(color="#c9d1d9"),
-            margin=dict(t=20, b=20, l=20, r=20)
-        )
-        st.plotly_chart(fig_donut, use_container_width=True)
 
-    with col_b:
-        st.subheader("Expected Return & Risk Metrics")
-        st.dataframe(
-            pd.DataFrame({
-                "Parameter": ["Expected Portfolio Return", "Expected Portfolio Volatility", "Optimal Sharpe Ratio", "Sentiment Tilt Applied"],
-                "Value": [
-                    f"{opt_res['expected_return']*100:.2f}%",
-                    f"{opt_res['portfolio_volatility']*100:.2f}%",
-                    f"{opt_res['sharpe_ratio']:.3f}",
-                    f"{opt_res.get('sentiment_tilt_applied', 0.0)*100:+.2f}%"
-                ]
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        st.subheader("Implied vs Black-Litterman Posterior Returns")
-        df_returns_cmp = pd.DataFrame({
-            "Market Implied Eq (\u03a0) %": [round(v*100, 2) for v in opt_res.get("implied_equilibrium_returns", {}).values()],
-            "Black-Litterman (\u03bc_BL) %": [round(v*100, 2) for v in opt_res.get("black_litterman_returns", {}).values()]
-        }, index=list(target_weights.keys()))
-        st.dataframe(df_returns_cmp, use_container_width=True)
-
-# TAB 2: GJR-GARCH Volatility Engine
-with tab2:
-    st.subheader("GJR-GARCH(1,1,1) Asymmetric Volatility Forecasts")
-    
-    col_v1, col_v2 = st.columns([1, 2])
-    with col_v1:
-        st.markdown(f"**Model Status**: `{garch_fit['model_name']}`")
-        st.markdown(r"**$\omega$ (Omega)**: `" + f"{garch_fit['omega']:.6f}`")
-        st.markdown(r"**$\alpha$ (Alpha - Shock impact)**: `" + f"{garch_fit['alpha']:.4f}`")
-        st.markdown(r"**$\gamma$ (Gamma - Asymmetry/Leverage)**: `" + f"{garch_fit['gamma']:.4f}`")
-        st.markdown(r"**$\beta$ (Beta - Vol Persistence)**: `" + f"{garch_fit['beta']:.4f}`")
-        st.markdown(f"**Persistence Total**: `{garch_fit['persistence']:.4f}`")
-        
-        st.subheader("Forecast Horizons")
-        st.json({f"{h}-Day Forecast": f"{v*100:.2f}%" for h, v in vol_forecasts.items()})
-
-    with col_v2:
-        if "annualized_volatility" in garch_fit:
-            vol_series = garch_fit["annualized_volatility"]
-            fig_vol = px.line(
-                vol_series,
-                title="Historical Conditional Volatility Time Series (% Annualized)",
-                labels={"value": "Volatility %", "index": "Date"}
+        # ▸ TAB 1 — Trade Execution Plan ──────────────────────────────────
+        with tab1:
+            st.subheader("ACTIONABLE TRADE EXECUTION INSTRUCTIONS")
+            st.markdown(
+                f"GENERATED **{buy_orders} BUY** AND **{sell_orders} SELL** "
+                f"ORDERS // INTEGER-SHARE FLOORING // MICRO-TRADE FILTER "
+                f"< INR {min_trade_inr:,.0f}"
             )
-            fig_vol.update_traces(line_color="#58a6ff")
-            fig_vol.update_layout(
-                paper_bgcolor="#161b22",
-                plot_bgcolor="#161b22",
-                font=dict(color="#c9d1d9"),
-                showlegend=False
-            )
-            st.plotly_chart(fig_vol, use_container_width=True)
 
-# TAB 3: FinBERT Sentiment Radar
-with tab3:
-    st.subheader("FinBERT News Headlines Sentiment Analysis")
-    
-    col_s1, col_s2 = st.columns([1, 2])
-    with col_s1:
-        st.markdown(f"**NLP Engine**: `{sentiment_res['engine']}`")
-        st.markdown(f"**Headline Count Analyzed**: `{sentiment_res['headline_count']}`")
-        st.markdown(f"**Composite Sentiment Score**: `{sentiment_res['composite_score']:+.4f}`")
-        
-        # Gauge Bar
-        fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=sentiment_res['composite_score'],
-            domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': "Market Sentiment Score [-1 to +1]"},
-            gauge={
-                'axis': {'range': [-1, 1]},
-                'bar': {'color': "#58a6ff"},
-                'steps': [
-                    {'range': [-1, -0.15], 'color': "#f85149"},
-                    {'range': [-0.15, 0.15], 'color': "#8b949e"},
-                    {'range': [0.15, 1], 'color': "#3fb950"}
-                ]
-            }
-        ))
-        fig_gauge.update_layout(paper_bgcolor="#161b22", font=dict(color="#c9d1d9"), height=250)
-        st.plotly_chart(fig_gauge, use_container_width=True)
-
-    with col_s2:
-        st.subheader("Scraped Financial News Feed")
-        df_news = pd.DataFrame(sentiment_res["details"])
-        if not df_news.empty:
             st.dataframe(
-                df_news[["text", "positive", "negative", "net_score"]],
+                style_trade_plan(plan_df),
                 use_container_width=True,
-                hide_index=True
+                height=380,
             )
 
-# TAB 4: Portfolio Rebalancer & SIP Router
-with tab4:
-    st.subheader("Upload User Portfolio CSV / Excel State")
-    
-    uploaded_file = st.file_uploader("Upload portfolio file (CSV or Excel)", type=["csv", "xlsx", "xls"])
-    
-    if uploaded_file is not None:
-        parsed_portfolio = parser.parse_portfolio_file(uploaded_file)
+            # Order summaries side-by-side
+            trades_only = plan_df[plan_df["Action"].isin(["BUY", "SELL"])].copy()
+            if not trades_only.empty:
+                left, right = st.columns(2)
+                with left:
+                    st.markdown("#### BUY ORDERS")
+                    buys = trades_only[trades_only["Action"] == "BUY"][
+                        ["Ticker", "Trade_Units", "Current_Price", "Trade_Value_INR"]
+                    ]
+                    if buys.empty:
+                        st.info("NO BUY ORDERS GENERATED.")
+                    else:
+                        st.dataframe(
+                            buys.style
+                            .format({
+                                "Current_Price": "₹{:,.2f}",
+                                "Trade_Value_INR": "₹{:,.2f}",
+                            })
+                            .set_properties(**{
+                                "background-color": "#000000",
+                                "color": "#00FF00",
+                                "font-family": "'Courier New', Courier, monospace",
+                            }),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                with right:
+                    st.markdown("#### SELL ORDERS")
+                    sells = trades_only[trades_only["Action"] == "SELL"][
+                        ["Ticker", "Trade_Units", "Current_Price", "Trade_Value_INR"]
+                    ]
+                    if sells.empty:
+                        st.info("ZERO SELL ORDERS TRIGGERED.")
+                    else:
+                        st.dataframe(
+                            sells.style
+                            .format({
+                                "Current_Price": "₹{:,.2f}",
+                                "Trade_Value_INR": "₹{:,.2f}",
+                            })
+                            .set_properties(**{
+                                "background-color": "#000000",
+                                "color": "#FF0000",
+                                "font-family": "'Courier New', Courier, monospace",
+                            }),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+        # ▸ TAB 2 — Weight Comparison ──────────────────────────────────────
+        with tab2:
+            st.subheader("CURRENT VS OPTIMAL VS POST-TRADE WEIGHTS")
+            st.plotly_chart(
+                render_weight_comparison(plan_df), use_container_width=True,
+            )
+
+            col_w1, col_w2 = st.columns(2)
+            with col_w1:
+                st.markdown("#### TARGET PORTFOLIO [MAX SHARPE]")
+                tw = st.session_state["target_weights"]
+                df_tw = pd.DataFrame([
+                    {"Ticker": k, "Weight (%)": round(v * 100, 2)}
+                    for k, v in tw.items()
+                ])
+                fig_target = px.pie(
+                    df_tw, names="Ticker", values="Weight (%)",
+                    hole=0.45, title="OPTIMAL TARGET ALLOCATION",
+                )
+                fig_target.update_layout(
+                    paper_bgcolor="black", plot_bgcolor="black",
+                    font=dict(color="#FF9900",
+                              family="'Courier New', Courier, monospace"),
+                    margin=dict(t=40, b=20, l=20, r=20),
+                )
+                st.plotly_chart(fig_target, use_container_width=True)
+
+            with col_w2:
+                st.markdown("#### POST-TRADE COMPOSITION")
+                post = plan_df[plan_df["Post_Trade_Weight"] > 0].copy()
+                post["Weight (%)"] = (post["Post_Trade_Weight"] * 100).round(2)
+                fig_post = px.pie(
+                    post, names="Ticker", values="Weight (%)",
+                    hole=0.45, title="EXPECTED POST-TRADE ALLOCATION",
+                )
+                fig_post.update_layout(
+                    paper_bgcolor="black", plot_bgcolor="black",
+                    font=dict(color="#FF9900",
+                              family="'Courier New', Courier, monospace"),
+                    margin=dict(t=40, b=20, l=20, r=20),
+                )
+                st.plotly_chart(fig_post, use_container_width=True)
+
+        # ▸ TAB 3 — Volatility & Correlation ──────────────────────────────
+        with tab3:
+            st.subheader("GJR-GARCH(1,1,1) FORECASTS & COVARIANCE MATRIX")
+            v1, v2 = st.columns(2)
+
+            with v1:
+                st.markdown("#### 1-STEP ANNUALISED VOLATILITY FORECASTS")
+                vol_dict = st.session_state["garch_vol_forecasts"]
+                er_dict = st.session_state["expected_returns"].to_dict()
+                risk_df = pd.DataFrame([
+                    {
+                        "Ticker": t,
+                        "E[Return] (ann.)": f"{er_dict.get(t, 0.0) * 100:.2f}%",
+                        "GJR-GARCH σ (ann.)": f"{vol_dict.get(t, 0.0) * 100:.2f}%",
+                        "Target Weight": f"{tw.get(t, 0.0) * 100:.2f}%",
+                    }
+                    for t in MOCK_NIFTY_UNIVERSE
+                ])
+                st.dataframe(risk_df, use_container_width=True, hide_index=True)
+
+            with v2:
+                st.markdown("#### ASSET CORRELATION HEATMAP")
+                cov: pd.DataFrame = st.session_state["cov_matrix"]
+                std = np.sqrt(np.diag(cov.values))
+                corr_vals = cov.values / np.outer(std, std)
+                df_corr = pd.DataFrame(
+                    corr_vals, index=cov.index, columns=cov.columns,
+                )
+                fig_corr = px.imshow(
+                    df_corr, text_auto=".2f",
+                    color_continuous_scale=[[0, "#000000"], [0.5, "#FF9900"], [1, "#00FFFF"]],
+                    title="NIFTY CONSTITUENTS — CORRELATION MATRIX",
+                )
+                fig_corr.update_layout(
+                    paper_bgcolor="black", plot_bgcolor="black",
+                    font=dict(color="#FF9900",
+                              family="'Courier New', Courier, monospace"),
+                    margin=dict(t=40, b=20, l=20, r=20),
+                )
+                st.plotly_chart(fig_corr, use_container_width=True)
+
+        # ▸ TAB 4 — Uploaded Holdings & P&L ────────────────────────────────
+        with tab4:
+            st.subheader("UPLOADED PORTFOLIO HOLDINGS & P&L BREAKDOWN")
+            curr_df: pd.DataFrame = st.session_state["current_portfolio_df"]
+
+            if not curr_df.empty:
+                s = st.session_state["portfolio_summary"]
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("INVESTMENT COST",
+                          f"INR {s.get('total_investment_cost', 0.0):,.2f}")
+                p2.metric("MARKET VALUE",
+                          f"INR {s.get('total_portfolio_value', 0.0):,.2f}")
+                p3.metric("UNREALISED P&L",
+                          f"INR {s.get('total_pnl', 0.0):,.2f}")
+                p4.metric("RETURN %",
+                          f"{s.get('total_pnl_pct', 0.0):+.2f}%")
+                st.dataframe(
+                    curr_df, use_container_width=True, hide_index=True,
+                )
+            else:
+                st.info(
+                    "NO PORTFOLIO FILE UPLOADED — ALLOCATOR EXECUTED INITIAL "
+                    "CASH DEPLOYMENT FROM EMPTY PORTFOLIO."
+                )
+
     else:
-        st.info("No file uploaded. Displaying default sample Indian equity portfolio.")
-        parsed_portfolio = parser._fallback_sample_portfolio()
-
-    st.markdown("### Portfolio Current Summary")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Market Value", f"₹{parsed_portfolio['total_market_value']:,.2f}")
-    c2.metric("Total Investment Cost", f"₹{parsed_portfolio['total_cost']:,.2f}")
-    c3.metric("Unrealized P&L", f"₹{parsed_portfolio['total_pnl']:,.2f}")
-    c4.metric("Unrealized Return %", f"{parsed_portfolio['total_pnl_pct']:+.2f}%")
-
-    st.dataframe(parsed_portfolio["holdings_df"], use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.subheader("Smart Rebalancing Execution Router")
-    
-    mode = st.radio("Select Execution Router Mode", ["SIP Inflow Distribution", "Tactical Rebalance (Buy/Sell Trades)"])
-    
-    if mode == "SIP Inflow Distribution":
-        st.markdown(f"**Deploying Fresh Monthly Cash Inflow**: ₹{sip_cash_inflow:,.2f}")
-        sip_res = router.route_sip_inflow(
-            current_holdings=parsed_portfolio["holdings_df"],
-            target_weights=target_weights,
-            sip_amount=sip_cash_inflow
+        # ── Welcome / Landing Screen ──────────────────────────────────────
+        st.info(
+            "CONFIGURE PORTFOLIO FILE, CASH BUDGET, AND MODE IN THE "
+            "SIDEBAR, THEN CLICK 'EXECUTE OPTIMIZATION'."
         )
-        st.dataframe(sip_res["sip_recommendations"], use_container_width=True, hide_index=True)
-    else:
-        rebalance_res = router.route_tactical_rebalance(
-            current_holdings=parsed_portfolio["holdings_df"],
-            target_weights=target_weights
+        st.markdown(
+            """
+        ### SYSTEM MODULES & QUANTITATIVE PIPELINE
+        1. **MARKET DATA FEED** — Ingests historical daily adjusted prices
+           for liquid Nifty equities via yfinance.
+        2. **GJR-GARCH VOLATILITY** — Captures asymmetric shocks & leverage
+           effects to forecast conditional forward volatility.
+        3. **SLSQP SHARPE OPTIMISATION** — Solves for maximum Sharpe ratio
+           weights subject to concentration constraints.
+        4. **SMART CAPITAL ROUTING**
+           - *SIP_FIRST* — Proportional deployment into underweight assets;
+             strictly zero sell orders.
+           - *TACTICAL* — Evaluates drift vs threshold and triggers
+             disciplined sell/buy orders to close the gap.
+        5. **EXECUTION GUARDRAILS** — Integer share flooring, micro-trade
+           suppression (< INR 1,000), and residual-cash tracking.
+        """
         )
-        st.dataframe(rebalance_res["trade_recommendations"], use_container_width=True, hide_index=True)
 
-# TAB 5: Walk-Forward Backtest Simulator
-with tab5:
-    st.subheader("Rolling Window Walk-Forward Strategy Simulator")
-    
-    if st.button("🚀 Run Walk-Forward Backtest Simulation"):
-        with st.spinner("Executing rolling window backtest & computing quantitative metrics..."):
-            backtester = WalkForwardBacktester(train_window=252, rebalance_freq=21, risk_free_rate=rf_rate)
-            bt_results = backtester.run_backtest(returns)
 
-            st.success("Backtest simulation completed!")
-
-            # Plot Equity Curves
-            fig_bt = px.line(
-                bt_results["equity_curves"],
-                title="Historical Cumulative Portfolio Growth (INR ₹100,000 Base)",
-                labels={"value": "Portfolio Value (₹)", "index": "Date"}
-            )
-            fig_bt.update_layout(
-                paper_bgcolor="#161b22",
-                plot_bgcolor="#161b22",
-                font=dict(color="#c9d1d9")
-            )
-            st.plotly_chart(fig_bt, use_container_width=True)
-
-            # Compare Metrics Table
-            st.subheader("Quantitative Metrics Comparison Table")
-            df_metrics = pd.DataFrame(bt_results["metrics"]).T
-            st.dataframe(df_metrics, use_container_width=True)
+# ═══════════════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    main()

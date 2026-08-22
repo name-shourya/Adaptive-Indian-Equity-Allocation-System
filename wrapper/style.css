@@ -1,0 +1,192 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   BLOOMBERG TERMINAL THEME — RATR Dashboard
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Global Reset ────────────────────────────────────────── */
+* {
+    font-family: 'Courier New', Courier, monospace !important;
+    border-radius: 0px !important;
+}
+
+/* ── Restore Material Icon Ligatures ─────────────────────── */
+.material-symbols-rounded,
+.material-icons,
+span[class*="material-symbols"],
+span[class*="material-icons"],
+[data-testid="stSidebar"] .material-symbols-rounded,
+[data-testid="stHeader"] .material-symbols-rounded {
+    font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+    font-style: normal;
+    -webkit-font-feature-settings: 'liga';
+    font-feature-settings: 'liga';
+}
+
+/* ── Base App ────────────────────────────────────────────── */
+.stApp {
+    background-color: #000000;
+    color: #FF9900;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+section[data-testid="stSidebar"] {
+    background-color: #000000 !important;
+    border-right: 1px solid #333333;
+}
+section[data-testid="stSidebar"] * {
+    color: #FF9900 !important;
+}
+
+/* ── Terminal Title ──────────────────────────────────────── */
+.main-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #FF9900;
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: #FF9900;
+    margin-bottom: 0.1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 1px solid #333333;
+    padding-bottom: 0.4rem;
+}
+.sub-title {
+    font-size: 0.85rem;
+    color: #888888;
+    margin-bottom: 1.2rem;
+    letter-spacing: 0.5px;
+}
+
+/* ── Metric Cards ────────────────────────────────────────── */
+.metric-card {
+    background-color: #000000;
+    border: 1px solid #333333;
+    border-radius: 0px !important;
+    padding: 0.8rem 1rem;
+    box-shadow: none;
+}
+.metric-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888888;
+    margin-bottom: 0.2rem;
+}
+.metric-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #FF9900;
+    margin-bottom: 0.15rem;
+}
+.badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 0px !important;
+    display: inline-block;
+}
+.badge-green  { background: transparent; color: #00FF00; border: 1px solid #00FF00; }
+.badge-blue   { background: transparent; color: #00FFFF; border: 1px solid #00FFFF; }
+.badge-purple { background: transparent; color: #FF9900; border: 1px solid #FF9900; }
+
+/* ── Table / Dataframe Container ─────────────────────────── */
+div[data-testid="stDataFrame"] {
+    border: 1px solid #333333;
+    border-radius: 0px !important;
+    background-color: #000000;
+}
+
+/* ── Streamlit st.metric elements ────────────────────────── */
+div[data-testid="stMetric"] {
+    background-color: #000000 !important;
+    border: 1px solid #333333 !important;
+    border-radius: 0px !important;
+    padding: 0.6rem 0.8rem;
+}
+div[data-testid="stMetric"] label {
+    color: #888888 !important;
+}
+div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+    color: #FF9900 !important;
+}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+button[data-baseweb="tab"] {
+    color: #888888 !important;
+    border-bottom: 2px solid transparent;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #FF9900 !important;
+    border-bottom: 2px solid #FF9900 !important;
+}
+
+/* ── All Borders ─────────────────────────────────────────── */
+.stTextInput > div > div,
+.stSelectbox > div > div,
+.stNumberInput > div > div {
+    border-color: #333333 !important;
+    background-color: #0a0a0a !important;
+    color: #FF9900 !important;
+}
+
+/* ── File Uploader Dropzone Fix ──────────────────────────── */
+[data-testid="stFileUploadDropzone"] {
+    border: 1px dashed #333333 !important;
+    border-radius: 0px !important;
+    background-color: #000000 !important;
+    padding: 0.8rem 1rem !important;
+    min-height: auto !important;
+    overflow: visible !important;
+}
+.stFileUploader > div {
+    border: none !important;
+    background-color: transparent !important;
+}
+
+/* ── Buttons — Pure White / Black ────────────────────────── */
+.stButton > button {
+    background-color: #FFFFFF !important;
+    color: #000000 !important;
+    border: 1px solid #FFFFFF !important;
+    border-radius: 0px !important;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+.stButton > button:hover,
+.stButton > button:focus,
+.stButton > button:active,
+.stButton > button:visited {
+    background-color: #FFFFFF !important;
+    color: #000000 !important;
+    border: 1px solid #FFFFFF !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* ── Expander ────────────────────────────────────────────── */
+details[data-testid="stExpander"] {
+    border: 1px solid #333333 !important;
+    background-color: #000000 !important;
+}
+
+/* ── Scrollbar (Webkit) ──────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #000000;
+}
+::-webkit-scrollbar-thumb {
+    background: #333333;
+}
+
+/* ── Info/Warning/Error boxes ────────────────────────────── */
+div[data-testid="stAlert"] {
+    background-color: #0a0a0a !important;
+    border: 1px solid #333333 !important;
+    color: #FF9900 !important;
+    border-radius: 0px !important;
+}

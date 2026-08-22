@@ -5,17 +5,10 @@ import urllib.request
 import urllib.parse
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional
 
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
-
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    BeautifulSoup = None
+import yfinance as yf
+from bs4 import BeautifulSoup
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -80,19 +73,48 @@ class MarketDataIngestor:
                 logger.info(f"Downloading historical market OHLCV data for tickers: {tickers}")
                 try:
                     data = yf.download(tickers, period=period, interval=interval, progress=False)
-                    if isinstance(data.columns, pd.MultiIndex):
+                    if data is None or data.empty:
+                        logger.warning("yfinance returned no data. Generating synthetic baseline prices.")
+                        df_prices = self._generate_synthetic_prices(tickers, period)
+                    elif isinstance(data.columns, pd.MultiIndex):
                         if 'Adj Close' in data.columns.levels[0]:
                             df_prices = data['Adj Close']
                         elif 'Close' in data.columns.levels[0]:
                             df_prices = data['Close']
                         else:
                             df_prices = data
+
+                        if isinstance(df_prices, pd.Series):
+                            df_prices = df_prices.to_frame(name=tickers[0])
+
+                        # Drop any columns that are entirely NaN before row-level dropna
+                        df_prices = df_prices.dropna(axis=1, how="all")
+                        if df_prices.empty or len(df_prices) < 20:
+                            logger.warning("yfinance returned insufficient data rows. Generating synthetic baseline prices.")
+                            df_prices = self._generate_synthetic_prices(tickers, period)
+                        else:
+                            # If some tickers failed, fill missing ticker columns with synthetic series
+                            for t in tickers:
+                                if t not in df_prices.columns:
+                                    syn = self._generate_synthetic_prices([t], period)
+                                    df_prices[t] = syn[t].reindex(df_prices.index).ffill().bfill()
                     else:
                         df_prices = data[['Close']] if 'Close' in data.columns else data
                         df_prices.columns = tickers
 
-                    if isinstance(df_prices, pd.Series):
-                        df_prices = df_prices.to_frame(name=tickers[0])
+                        if isinstance(df_prices, pd.Series):
+                            df_prices = df_prices.to_frame(name=tickers[0])
+
+                        # Drop any columns that are entirely NaN before row-level dropna
+                        df_prices = df_prices.dropna(axis=1, how="all")
+                        if df_prices.empty or len(df_prices) < 20:
+                            logger.warning("yfinance returned insufficient data rows. Generating synthetic baseline prices.")
+                            df_prices = self._generate_synthetic_prices(tickers, period)
+                        else:
+                            for t in tickers:
+                                if t not in df_prices.columns:
+                                    syn = self._generate_synthetic_prices([t], period)
+                                    df_prices[t] = syn[t].reindex(df_prices.index).ffill().bfill()
 
                     df_prices = self._clean_missing_prices(df_prices)
                     df_prices.to_csv(raw_cache_path)
@@ -105,6 +127,8 @@ class MarketDataIngestor:
 
         # Clean missing values
         df_prices = self._clean_missing_prices(df_prices)
+        if df_prices.empty or len(df_prices) < 20:
+            df_prices = self._generate_synthetic_prices(tickers, period)
 
         # Calculate returns
         log_returns, simple_returns = self.calculate_returns(df_prices)
@@ -124,7 +148,12 @@ class MarketDataIngestor:
         clean_prices = self._clean_missing_prices(df_prices)
 
         # 1. Logarithmic Returns
-        log_returns = np.log(clean_prices / clean_prices.shift(1))
+        ratio = clean_prices / clean_prices.shift(1)
+        log_returns = pd.DataFrame(
+            np.log(ratio.values),  # type: ignore[arg-type]
+            index=ratio.index,
+            columns=ratio.columns,
+        )
         log_returns = log_returns.replace([np.inf, -np.inf], np.nan).dropna()
 
         # 2. Simple Returns
@@ -136,11 +165,14 @@ class MarketDataIngestor:
     def _clean_missing_prices(self, df_prices: pd.DataFrame) -> pd.DataFrame:
         """
         Automatic missing-data handling:
-        Forward fill -> Backward fill -> Drop remaining NaN rows.
+        Drop all-NaN columns -> Forward fill -> Backward fill -> Drop remaining NaN rows.
         """
+        if df_prices.empty:
+            return df_prices
         df_clean = df_prices.copy()
-        # Handle zeros as missing data
         df_clean = df_clean.replace(0.0, np.nan)
+        # Drop columns with all NaNs
+        df_clean = df_clean.dropna(axis=1, how="all")
         # Forward fill then backward fill
         df_clean = df_clean.ffill().bfill().dropna()
         return df_clean
@@ -241,4 +273,8 @@ class MarketDataIngestor:
             price = 1000.0 * np.exp(np.cumsum(daily_returns))
             prices[ticker] = price
         return pd.DataFrame(prices, index=dates)
+
+
+# Alias for MarketDataIngestor
+MarketDataFeed = MarketDataIngestor
 
