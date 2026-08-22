@@ -10,7 +10,18 @@ The AIEAS architecture is fundamentally bipartite, separating computationally in
 
 ## 3. Installation & Setup Guide
 
-### Windows (PowerShell / Command Prompt)
+### Option 1: For Users Without Git (Download ZIP)
+1. Go to this project's GitHub repository page in your web browser.
+2. Click the green **Code** button near the top right.
+3. Select **Download ZIP** from the dropdown menu.
+4. Extract the downloaded `.zip` file to a folder on your computer.
+5. Open your terminal (Command Prompt/PowerShell on Windows, Terminal on macOS/Linux).
+6. Navigate into the extracted folder using the `cd` command (e.g., `cd path/to/extracted-folder`).
+7. Skip the `git clone` step and proceed directly to creating a virtual environment in your OS-specific instructions below.
+
+### Option 2: For Git Users (Clone Repository)
+
+#### Windows (PowerShell / Command Prompt)
 ```powershell
 # Clone the repository
 git clone https://github.com/name-shourya/Adaptive-Indian-Equity-Allocation-System.git
