@@ -6,7 +6,7 @@ numpy>=1.24.0
 arch>=6.0.0
 scipy>=1.10.0
 
-# --- Natural Language Processing (FinBERT sentiment — optional, CPU-safe) ---
+# --- Natural Language Processing (FinBERT sentiment - optional, CPU-safe) ---
 # Remove torch/transformers if deploying on Streamlit Community Cloud free tier
 # The system degrades gracefully to the built-in Lexicon Engine if unavailable
 transformers>=4.30.0
