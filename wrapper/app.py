@@ -3,6 +3,9 @@
 Orchestrates the backend quantitative pipeline:
   MarketDataFeed  →  VolatilityModeler  →  SharpeOptimizer
   PortfolioParser →  AllocationRouter   →  Trade Execution Plan
+
+Self-healing: auto-executes market data ingestion on cold start if
+processed artifact files are missing (Streamlit Community Cloud safe).
 """
 
 import logging
@@ -425,8 +428,56 @@ def _card(label: str, value: str, badge_text: str, badge_cls: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 # Main Application
 # ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+# Self-Healing Pre-flight: auto-run data pipeline on cold start
+# ═══════════════════════════════════════════════════════════════════════════
+PROCESSED_LOG_RETURNS_PATH = os.path.join(
+    PROJECT_ROOT, "data", "processed", "processed_log_returns.csv"
+)
+PROCESSED_SIMPLE_RETURNS_PATH = os.path.join(
+    PROJECT_ROOT, "data", "processed", "processed_simple_returns.csv"
+)
+
+
+def _run_data_pipeline() -> None:
+    """Execute the MarketDataFeed ingestion pipeline to generate processed data artifacts."""
+    feed = MarketDataFeed(data_dir=os.path.join(PROJECT_ROOT, "data"))
+    feed.fetch_ohlcv(
+        tickers=MOCK_NIFTY_UNIVERSE,
+        period="3y",
+        interval="1d",
+        force_refresh=True,
+    )
+
+
+def _processed_artifacts_exist() -> bool:
+    """Return True if all required processed data artifacts are present on disk."""
+    return (
+        os.path.exists(PROCESSED_LOG_RETURNS_PATH)
+        and os.path.getsize(PROCESSED_LOG_RETURNS_PATH) > 100
+        and os.path.exists(PROCESSED_SIMPLE_RETURNS_PATH)
+        and os.path.getsize(PROCESSED_SIMPLE_RETURNS_PATH) > 100
+    )
+
+
 def main() -> None:
     setup_page()
+
+    # ── Self-Healing Cold-Start Preflight ─────────────────────────────────
+    if not _processed_artifacts_exist():
+        with st.spinner(
+            "Initializing GJR-GARCH volatility model & portfolio optimization "
+            "pipeline... (first-run data ingestion)"
+        ):
+            try:
+                _run_data_pipeline()
+                logger.info("Cold-start pipeline execution completed successfully.")
+            except Exception as preflight_exc:
+                logger.warning("Preflight pipeline run failed: %s", preflight_exc)
+                st.warning(
+                    f"⚠️ Initial data pipeline encountered an issue: {preflight_exc}. "
+                    "Proceeding — synthetic data will be used as fallback."
+                )
 
     # ── Header ────────────────────────────────────────────────────────────
     st.markdown(
@@ -537,7 +588,33 @@ def main() -> None:
 
     st.sidebar.markdown("---")
 
-    # 6. Run button
+    # 6. Re-run Pipeline button
+    st.sidebar.markdown("---")
+    if st.sidebar.button(
+        "🔄 Re-run GJR-GARCH & Optimization Pipeline",
+        use_container_width=True,
+        help="Force re-download market data and re-fit all models. Clears cached results.",
+    ):
+        with st.spinner(
+            "Re-running GJR-GARCH volatility model & portfolio optimization pipeline..."
+        ):
+            try:
+                _run_data_pipeline()
+                # Clear any cached session state so dashboard refreshes fully
+                for key in ["optimized", "plan_df", "target_weights",
+                             "garch_vol_forecasts", "expected_returns",
+                             "cov_matrix", "rebalance_mode", "portfolio_summary",
+                             "current_portfolio_df", "existing_val", "cash_budget"]:
+                    st.session_state.pop(key, None)
+                st.success("✅ Pipeline re-executed successfully. Click 'EXECUTE OPTIMIZATION' to refresh results.")
+                logger.info("On-demand pipeline re-run completed.")
+            except Exception as rerun_exc:
+                st.error(f"Pipeline re-run failed: {rerun_exc}")
+                logger.error("On-demand re-run failed: %s", rerun_exc, exc_info=True)
+
+    st.sidebar.markdown("---")
+
+    # 7. Run button
     run_btn = st.sidebar.button(
         "EXECUTE OPTIMIZATION",
         type="primary",

@@ -1,21 +1,26 @@
-# Data Manipulation
+# --- Data Manipulation & Scientific Computing -------------------------------
 pandas>=2.0.0
 numpy>=1.24.0
 
-# Quantitative Modeling
+# --- Quantitative / Econometric Modeling ------------------------------------
 arch>=6.0.0
 scipy>=1.10.0
 
-# Natural Language Processing & Deep Learning
+# --- Natural Language Processing (FinBERT sentiment — optional, CPU-safe) ---
+# Remove torch/transformers if deploying on Streamlit Community Cloud free tier
+# The system degrades gracefully to the built-in Lexicon Engine if unavailable
 transformers>=4.30.0
 torch>=2.0.0
 
-# Market Data Ingestion & Scraping
+# --- Market Data Ingestion & Web Scraping -----------------------------------
 yfinance>=0.2.28
 beautifulsoup4>=4.12.0
 requests>=2.31.0
+lxml>=4.9.0
 
-# Product Wrapper & Dashboard
-streamlit>=1.25.0
+# --- Streamlit Dashboard & Visualization ------------------------------------
+streamlit>=1.30.0
 plotly>=5.15.0
+
+# --- Portfolio File Parsing --------------------------------------------------
 openpyxl>=3.1.0
