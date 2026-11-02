@@ -4,7 +4,6 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![GJR-GARCH](https://img.shields.io/badge/Econometrics-GJR--GARCH-FF6B35?style=flat-square&logo=chartdotjs&logoColor=white)](https://arch.readthedocs.io/)
-[![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![FinTech](https://img.shields.io/badge/Domain-FinTech%20Risk%20Analytics-00C49A?style=flat-square&logo=cashapp&logoColor=white)](https://github.com/name-shourya/Adaptive-Indian-Equity-Allocation-System)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=flat-square)]()
 [![Deploy on Streamlit](https://img.shields.io/badge/Deploy%20on-Streamlit%20Cloud-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://share.streamlit.io/new?repository=name-shourya/Adaptive-Indian-Equity-Allocation-System&branch=main&mainModule=wrapper%2Fapp.py)
@@ -155,7 +154,7 @@ The Streamlit dashboard (`wrapper/app.py`) renders a **Bloomberg Terminal-styled
 - **Fresh Cash Budget (INR)** -- capital for SIP deployment
 - **Rebalance Mode** -- `SIP_FIRST` (zero-sell cash deployment) vs `TACTICAL` (full drift-triggered rebalance)
 - **Advanced Risk Settings** -- Drift Threshold %, Min Trade INR, Max Single-Asset Cap %, Historical Lookback Period
-- **[Re-run Pipeline Button]** -- on-demand re-execution of the full backend quantitative pipeline with session state flush
+- **Re-run Pipeline Button** -- on-demand re-execution of the full backend quantitative pipeline with session state flush
 
 ### Executive KPI Banner (5 Metric Cards)
 
