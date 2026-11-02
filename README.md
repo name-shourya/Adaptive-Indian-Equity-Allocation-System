@@ -6,9 +6,9 @@
 [![GJR-GARCH](https://img.shields.io/badge/Econometrics-GJR--GARCH-FF6B35?style=flat-square&logo=chartdotjs&logoColor=white)](https://arch.readthedocs.io/)
 [![FinTech](https://img.shields.io/badge/Domain-FinTech%20Risk%20Analytics-00C49A?style=flat-square&logo=cashapp&logoColor=white)](https://github.com/name-shourya/Adaptive-Indian-Equity-Allocation-System)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=flat-square)]()
-[![Deploy on Streamlit](https://img.shields.io/badge/Deploy%20on-Streamlit%20Cloud-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://share.streamlit.io/new?repository=name-shourya/Adaptive-Indian-Equity-Allocation-System&branch=main&mainModule=wrapper%2Fapp.py)
+[![Live Streamlit App](https://img.shields.io/badge/Streamlit-Live%20Dashboard-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://adaptive-indian-equity-allocation-system-dwau67edyx97rhzyeghji.streamlit.app/)
 
-> **Live Dashboard:** Click the badge above to deploy on Streamlit Community Cloud, or run locally with `streamlit run wrapper/app.py`
+> **Live Dashboard:** [adaptive-indian-equity-allocation-system-dwau67edyx97rhzyeghji.streamlit.app](https://adaptive-indian-equity-allocation-system-dwau67edyx97rhzyeghji.streamlit.app/) (or run locally via `streamlit run wrapper/app.py`)
 
 ---
 
