@@ -1,4 +1,4 @@
-# Adaptive Indian Equity Allocation System ??
+# Adaptive Indian Equity Allocation System
 
 > **Quantitative Downside-Risk Forecasting & Algorithmic Portfolio Rebalancing Product (Nifty 50)**
 
@@ -7,75 +7,79 @@
 [![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![FinTech](https://img.shields.io/badge/Domain-FinTech%20Risk%20Analytics-00C49A?style=flat-square&logo=cashapp&logoColor=white)](https://github.com/name-shourya/Adaptive-Indian-Equity-Allocation-System)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=flat-square)]()
+[![Deploy on Streamlit](https://img.shields.io/badge/Deploy%20on-Streamlit%20Cloud-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://share.streamlit.io/new?repository=name-shourya/Adaptive-Indian-Equity-Allocation-System&branch=main&mainModule=wrapper%2Fapp.py)
+
+> **Live Dashboard:** Click the badge above to deploy on Streamlit Community Cloud, or run locally with `streamlit run wrapper/app.py`
 
 ---
 
-## ?? 1. Executive Problem Statement
+## 1. Executive Problem Statement
 
 ### Why Standard Mean-Variance Models Fail in Real Markets
 
 The classical Markowitz mean-variance framework rests on two fatal assumptions when applied to Indian equities:
 
 1. **Symmetric Volatility:** It treats positive and negative return shocks identically, ignoring the well-documented **leverage effect** where negative news amplifies future volatility disproportionately.
-2. **Constant Conditional Variance:** It assumes volatility is fixed over time, whereas Nifty 50 equities exhibit pronounced **volatility clustering** — calm periods punctuated by sharp, self-reinforcing stress regimes.
+2. **Constant Conditional Variance:** It assumes volatility is fixed over time, whereas Nifty 50 equities exhibit pronounced **volatility clustering** -- calm periods punctuated by sharp, self-reinforcing stress regimes (e.g. March 2020 COVID crash, 2022 rate-hike cycles, FII outflow shocks).
 
-This means that during high-volatility regimes — precisely when downside risk management matters most — standard optimizers dramatically **underestimate tail risk** and produce portfolio weights dangerously concentrated in assets exhibiting leverage-driven drawdowns.
+This means that during high-volatility regimes -- precisely when downside risk management matters most -- standard optimizers dramatically **underestimate tail risk** and produce portfolio weights dangerously concentrated in assets exhibiting leverage-driven drawdowns.
 
 ### Product Goal
 
 **AIEAS** is a self-serve quantitative risk engine and Streamlit telemetry dashboard that:
 
-- **Forecasts asymmetric downside risk** per Nifty 50 constituent using GJR-GARCH(1,1,1) — capturing leverage effects that symmetric GARCH misses.
+- **Forecasts asymmetric downside risk** per Nifty 50 constituent using GJR-GARCH(1,1,1) -- capturing leverage effects that symmetric GARCH misses.
 - **Solves for optimal portfolio weights** via constrained Max-Sharpe Ratio optimization (SLSQP), incorporating GJR-GARCH conditional covariance.
 - **Generates actionable rebalancing instructions** (BUY/SELL/HOLD with integer-share flooring and INR trade values) via two modes: SIP cash deployment and Tactical drift-triggered rebalancing.
 - **Minimizes capital drawdown** during market regime shifts by continuously recalibrating weights based on the latest conditional variance forecasts.
-- **Runs as a zero-crash Streamlit dashboard** with self-healing cold-start logic, deployable on Streamlit Community Cloud.
+- **Runs as a zero-crash Streamlit dashboard** with self-healing cold-start logic, fully deployable on Streamlit Community Cloud.
 
 ---
 
-## ??? 2. System Architecture & Execution Pipeline
+## 2. System Architecture & Execution Pipeline
 
 ### Two-Stage Quantitative Product Architecture
 
 ```
-+------------------------------------------------------------------------------+
-¦          STAGE 1: BACKEND QUANTITATIVE PIPELINE (core/ + backtest/)         ¦
-¦------------------------------------------------------------------------------¦
-¦                                                                              ¦
-¦  +---------------------+    +--------------------------+    +-------------+ ¦
-¦  ¦  Nifty 50 OHLCV     ¦---?¦ Asymmetric Volatility    ¦---?¦  Sharpe     ¦ ¦
-¦  ¦  Data Ingestion     ¦    ¦ Engine (GJR-GARCH(1,1,1))¦    ¦  Optimizer  ¦ ¦
-¦  ¦  (yfinance / QA)    ¦    ¦ • Leverage effect ?      ¦    ¦  (SLSQP)    ¦ ¦
-¦  ¦  core/ingestion.py  ¦    ¦ • Student-t innovations  ¦    ¦  core/      ¦ ¦
-¦  ¦                     ¦    ¦ • EWMA fallback          ¦    ¦  optimi-    ¦ ¦
-¦  ¦  OUTPUT:            ¦    ¦ core/volatility.py       ¦    ¦  zation.py  ¦ ¦
-¦  ¦  data/processed/    ¦    ¦                          ¦    ¦             ¦ ¦
-¦  ¦  *.csv              ¦    ¦  OUTPUT: s²_t forecasts  ¦    ¦  OUTPUT:    ¦ ¦
-¦  +---------------------+    +--------------------------+    ¦  w*_t ? Rn ¦ ¦
-¦                                                              +-------------+ ¦
-¦  +----------------------------------------------------------------------+   ¦
-¦  ¦  Walk-Forward Backtester (backtest/walk_forward.py)                  ¦   ¦
-¦  ¦  Rolling 252-day train ? 21-day rebalance ? Transaction cost 15bps  ¦   ¦
-¦  ¦  vs Static 60/40 Benchmark & Buy-and-Hold Equity Benchmarks         ¦   ¦
-¦  +----------------------------------------------------------------------+   ¦
-¦------------------------------------------------------------------------------¦
-¦          STAGE 2: FRONTEND TELEMETRY PRODUCT (wrapper/)                     ¦
-¦------------------------------------------------------------------------------¦
-¦                                                                              ¦
-¦  +---------------------------------------------------------------------+    ¦
-¦  ¦               Streamlit Bloomberg Terminal Dashboard                 ¦    ¦
-¦  ¦                     wrapper/app.py                                   ¦    ¦
-¦  ¦                                                                      ¦    ¦
-¦  ¦  • Self-healing cold start (auto-runs pipeline if data missing)      ¦    ¦
-¦  ¦  • Live asset allocations (pie + grouped bar charts)                 ¦    ¦
-¦  ¦  • GJR-GARCH volatility spike monitor per ticker                     ¦    ¦
-¦  ¦  • Automated BUY/SELL/HOLD rebalancing signal table                  ¦    ¦
-¦  ¦  • Correlation heatmap (Nifty constituent co-movement)               ¦    ¦
-¦  ¦  • P&L breakdown on uploaded user portfolio                          ¦    ¦
-¦  ¦                                                                      ¦    ¦
-¦  ¦  Portfolio CSV Input --? wrapper/parser.py --? wrapper/router.py     ¦    ¦
-¦  +---------------------------------------------------------------------+    ¦
-+------------------------------------------------------------------------------+
++===========================================================================+
+|       STAGE 1: BACKEND QUANTITATIVE PIPELINE (core/ + backtest/)         |
++===========================================================================+
+|                                                                           |
+|  +---------------------+   +---------------------------+   +-----------+ |
+|  | Nifty 50 OHLCV      |-->| Asymmetric Volatility     |-->| Sharpe    | |
+|  | Data Ingestion      |   | Engine (GJR-GARCH(1,1,1)) |   | Optimizer | |
+|  | (yfinance + QA)     |   | * Leverage effect (gamma) |   | (SLSQP)   | |
+|  | core/ingestion.py   |   | * Student-t innovations   |   | core/     | |
+|  |                     |   | * EWMA fallback           |   | optim-    | |
+|  | OUTPUT:             |   | core/volatility.py        |   | ization   | |
+|  | data/processed/     |   |                           |   | .py       | |
+|  | *.csv               |   | OUTPUT: sigma^2_t fcst    |   |           | |
+|  +---------------------+   +---------------------------+   | OUTPUT:   | |
+|                                                            | w* in R^N | |
+|                                                            +-----------+ |
+|  +--------------------------------------------------------------------+  |
+|  | Walk-Forward Backtester  (backtest/walk_forward.py)                |  |
+|  | 252-day train window -> 21-day rebalance -> 15bps transaction cost |  |
+|  | vs Static 60/40 Benchmark & Buy-and-Hold Equity Benchmarks        |  |
+|  +--------------------------------------------------------------------+  |
++===========================================================================+
+|       STAGE 2: FRONTEND TELEMETRY PRODUCT (wrapper/)                     |
++===========================================================================+
+|                                                                           |
+|  +--------------------------------------------------------------------+  |
+|  |          Streamlit Bloomberg Terminal Dashboard                     |  |
+|  |                    wrapper/app.py                                   |  |
+|  |                                                                     |  |
+|  |  * Self-healing cold start (auto-runs pipeline if data missing)     |  |
+|  |  * Live asset allocations (pie + grouped bar charts)                |  |
+|  |  * GJR-GARCH volatility spike monitor per ticker                    |  |
+|  |  * Automated BUY/SELL/HOLD rebalancing signal table                 |  |
+|  |  * Correlation heatmap (Nifty constituent co-movement)              |  |
+|  |  * P&L breakdown on uploaded user portfolio                         |  |
+|  |                                                                     |  |
+|  |  Portfolio CSV Input --> wrapper/parser.py --> wrapper/router.py    |  |
+|  +--------------------------------------------------------------------+  |
++===========================================================================+
 ```
 
 ### Repository File Map
@@ -84,23 +88,23 @@ This means that during high-volatility regimes — precisely when downside risk ma
 |------|-------|----------------|
 | `core/ingestion.py` | Stage 1 | Ingests historical OHLCV data via yfinance for Nifty 50 constituents; computes log & simple daily returns; caches raw & processed CSVs; synthetic fallback if network unavailable |
 | `core/volatility.py` | Stage 1 | Fits GJR-GARCH(1,1,1) model with Student-t innovations via `arch` package; returns annualized 1-step-ahead conditional variance forecasts; EWMA fallback |
-| `core/optimization.py` | Stage 1 | Implements constrained Max-Sharpe Ratio (SLSQP) and Black-Litterman portfolio optimizers; returns optimal weight vector `w*` subject to sum-to-one and per-asset cap bounds |
+| `core/optimization.py` | Stage 1 | Implements constrained Max-Sharpe Ratio (SLSQP) and Black-Litterman portfolio optimizers; returns optimal weight vector w* subject to sum-to-one and per-asset cap bounds |
 | `core/sentiment.py` | Stage 1 | HuggingFace FinBERT-powered financial news sentiment scoring with exponential time-decay weighting; lexicon fallback for offline execution |
-| `core/__init__.py` | Stage 1 | Package init — exports `MarketDataIngestor`, `VolatilityModeler`, `SharpeOptimizer`, `PortfolioOptimizer`, `SentimentEngine` |
+| `core/__init__.py` | Stage 1 | Package init -- exports MarketDataIngestor, VolatilityModeler, SharpeOptimizer, PortfolioOptimizer, SentimentEngine |
 | `backtest/walk_forward.py` | Stage 1 | Rolling walk-forward backtesting engine: 252-day train window, 21-day rebalance cycle, 15bps transaction cost; compares Dynamic Tactical vs Static 60/40 vs Buy-and-Hold |
 | `backtest/metrics.py` | Stage 1 | Computes performance metrics: annualized return, Sharpe ratio, max drawdown, Calmar ratio, VaR, CVaR |
-| `wrapper/app.py` | Stage 2 | **Streamlit Bloomberg Terminal dashboard** — self-healing cold start, 4-tab UI (trade plan, weight comparison, GJR-GARCH risk matrix, P&L), live BUY/SELL/HOLD signal generation |
+| `wrapper/app.py` | Stage 2 | **Streamlit Bloomberg Terminal dashboard** -- self-healing cold start, 4-tab UI (trade plan, weight comparison, GJR-GARCH risk matrix, P&L), live BUY/SELL/HOLD signal generation |
 | `wrapper/parser.py` | Stage 2 | Ingests user portfolio CSV/Excel; normalizes ticker formats; computes unrealized P&L, position weights, and health indicators |
 | `wrapper/router.py` | Stage 2 | Allocates capital via SIP_FIRST (zero-sell cash deployment) or TACTICAL (drift-triggered full rebalance) modes; integer share flooring; micro-trade suppression |
-| `wrapper/style.css` | Stage 2 | Bloomberg Terminal dark theme CSS — amber-on-black color scheme, monospace typography |
+| `wrapper/style.css` | Stage 2 | Bloomberg Terminal dark theme CSS -- amber-on-black color scheme, monospace typography |
 
 ---
 
-## ?? 3. Quantitative & Econometric Specification
+## 3. Quantitative & Econometric Specification
 
 ### GJR-GARCH(1,1,1) Conditional Variance Model
 
-The GJR-GARCH model captures the **leverage effect**: negative return shocks generate larger future volatility spikes than positive shocks of equal magnitude.
+The GJR-GARCH model -- developed by Glosten, Jagannathan & Runkle (1993) -- captures the **leverage effect**: negative return shocks generate larger future volatility spikes than positive shocks of equal magnitude.
 
 $$\sigma_t^2 = \omega + (\alpha + \gamma I_{t-1}) \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2$$
 
@@ -108,17 +112,17 @@ $$\sigma_t^2 = \omega + (\alpha + \gamma I_{t-1}) \epsilon_{t-1}^2 + \beta \sigm
 
 | Symbol | Definition |
 |--------|------------|
-| $\sigma_t^2$ | Conditional variance at time $t$ (the forward risk forecast) |
-| $\omega > 0$ | Long-run variance intercept (unconditional variance floor) |
-| $\epsilon_{t-1}^2$ | Squared innovation (unexpected return shock) from period $t-1$ |
-| $\alpha \geq 0$ | ARCH coefficient — symmetric response to past squared innovations |
-| $\gamma \geq 0$ | **Leverage coefficient** — extra variance loading from negative shocks only |
-| $I_{t-1}$ | **Asymmetric indicator:** $I_{t-1} = 1$ if $\epsilon_{t-1} < 0$, else $I_{t-1} = 0$ |
-| $\beta \geq 0$ | GARCH coefficient — persistence / memory of conditional variance |
+| `sigma_t^2` | Conditional variance at time t -- the forward-looking risk forecast |
+| `omega > 0` | Long-run variance intercept (unconditional variance floor) |
+| `epsilon_{t-1}^2` | Squared innovation (unexpected return shock) from period t-1 |
+| `alpha >= 0` | ARCH coefficient -- symmetric response to past squared innovations |
+| `gamma >= 0` | **Leverage coefficient** -- extra variance loading triggered exclusively by negative shocks |
+| `I_{t-1}` | **Asymmetric indicator:** I = 1 if epsilon_{t-1} < 0 (negative shock), else I = 0 |
+| `beta >= 0` | GARCH coefficient -- persistence / memory of conditional variance |
 
-**Persistence condition (covariance stationarity):** $\alpha + \frac{\gamma}{2} + \beta < 1$
+**Persistence condition (covariance stationarity):** `alpha + gamma/2 + beta < 1`
 
-**Implementation:** MLE with Student-$t$ error distribution; EWMA ($\lambda=0.94$) fallback on solver failure.
+**Implementation:** Estimated via MLE with Student-t error distribution to capture heavy tails. EWMA (lambda=0.94) serves as fallback if the MLE solver fails to converge.
 
 ---
 
@@ -130,27 +134,28 @@ $$\max_{w_t} \left( \frac{w_t^T \mu - r_f}{\sqrt{w_t^T \Sigma_t w_t}} \right) \q
 
 | Symbol | Definition |
 |--------|------------|
-| $w_t \in \mathbb{R}^N$ | Portfolio weight vector (decision variable) at rebalance date $t$ |
-| $\mu \in \mathbb{R}^N$ | Annualized expected return vector (historical mean × 252) |
-| $r_f$ | Risk-free rate (91-day Indian T-Bill yield, default 6.5% p.a.) |
-| $\Sigma_t \in \mathbb{R}^{N \times N}$ | Annualized return covariance matrix incorporating GJR-GARCH conditional variance |
-| $w_{\max}$ | Maximum concentration cap per single asset (default 25%) |
-| $N$ | Number of assets in the investable universe |
+| `w_t` in R^N | Portfolio weight vector (decision variable) at rebalance date t |
+| `mu` in R^N | Annualized expected return vector (historical mean x 252 trading days) |
+| `r_f` | Risk-free rate (91-day Indian T-Bill yield, default 6.5% p.a.) |
+| `Sigma_t` (N x N) | Annualized return covariance matrix incorporating GJR-GARCH conditional variance |
+| `w_max` | Maximum concentration cap per single asset (default 25%) |
+| `N` | Number of assets in the investable universe |
 
-**Solver:** Sequential Least Squares Programming (SLSQP) via `scipy.optimize.minimize`.
+**Solver:** Sequential Least Squares Programming (SLSQP) via `scipy.optimize.minimize`. Integer share flooring and an INR 1,000 minimum trade filter are applied post-optimization to produce executable order quantities.
 
 ---
 
-## ??? 4. Product UX & Telemetry Features
+## 4. Product UX & Telemetry Features
 
-The Streamlit dashboard (`wrapper/app.py`) renders a **Bloomberg Terminal-styled black/amber interface** with the following telemetry components:
+The Streamlit dashboard (`wrapper/app.py`) renders a **Bloomberg Terminal-styled black/amber interface** with the following live telemetry components:
 
 ### Sidebar Controls
-- **Portfolio CSV Upload** — accepts Ticker, Quantity, Buy_Price, Current_Price; auto-normalizes NSE/BSE ticker formats
-- **Fresh Cash Budget (INR)** — capital for SIP deployment
-- **Rebalance Mode** — `SIP_FIRST` (zero-sell cash deployment) vs `TACTICAL` (full drift-triggered rebalance)
-- **Advanced Risk Settings** — Drift Threshold %, Min Trade INR, Max Single-Asset Cap %, Historical Lookback Period
-- **?? Re-run GJR-GARCH & Optimization Pipeline** — on-demand backend re-execution with session state flush
+
+- **Portfolio CSV Upload** -- accepts Ticker, Quantity, Buy_Price, Current_Price; auto-normalizes NSE/BSE ticker formats
+- **Fresh Cash Budget (INR)** -- capital for SIP deployment
+- **Rebalance Mode** -- `SIP_FIRST` (zero-sell cash deployment) vs `TACTICAL` (full drift-triggered rebalance)
+- **Advanced Risk Settings** -- Drift Threshold %, Min Trade INR, Max Single-Asset Cap %, Historical Lookback Period
+- **[Re-run Pipeline Button]** -- on-demand re-execution of the full backend quantitative pipeline with session state flush
 
 ### Executive KPI Banner (5 Metric Cards)
 
@@ -162,29 +167,34 @@ The Streamlit dashboard (`wrapper/app.py`) renders a **Bloomberg Terminal-styled
 | RESIDUAL CASH | Unallocated float after integer-share flooring |
 | ACTIVE ROUTE | Executed mode (SIP_FIRST / TACTICAL) + Max Drift % |
 
-### Tab 1 — Trade Execution Plan
+### Tab 1 -- Trade Execution Plan
+
 - Color-coded trade table: **BUY (neon green)**, **SELL (red)**, **HOLD (grey)**
 - Columns: Ticker, Current Price, Current Weight, Target Weight, Drift %, Action, Trade Units, Trade Value (INR), Post-Trade Weight
 - Split BUY/SELL order summary panels for immediate execution reference
 
-### Tab 2 — Allocation Weight Comparison
-- **Grouped bar chart** — Current vs Target (Max Sharpe) vs Post-Trade weights (%)
-- **Optimal Portfolio Donut Chart** — pie allocation of Max Sharpe target weights
-- **Post-Trade Composition Donut Chart** — expected allocation after executing all orders
+### Tab 2 -- Allocation Weight Comparison
 
-### Tab 3 — GJR-GARCH Risk Matrix
-- **1-Step Annualised GJR-GARCH s Table** — per-ticker volatility forecasts alongside annualized expected return and target weight
-- **Asset Correlation Heatmap** (Plotly imshow) — Nifty constituent pairwise correlation matrix identifying diversification opportunities and concentration risk
+- **Grouped bar chart** -- Current vs Target (Max Sharpe) vs Post-Trade weights (%)
+- **Optimal Portfolio Donut Chart** -- pie allocation of Max Sharpe target weights
+- **Post-Trade Composition Donut Chart** -- expected allocation after executing all orders
 
-### Tab 4 — Holdings & P&L Dashboard
+### Tab 3 -- GJR-GARCH Risk Matrix
+
+- **1-Step Annualised GJR-GARCH Volatility Table** -- per-ticker sigma forecasts alongside annualized expected return and target weight
+- **Asset Correlation Heatmap** (Plotly imshow) -- Nifty constituent pairwise correlation matrix identifying diversification opportunities and concentration risk
+
+### Tab 4 -- Holdings & P&L Dashboard
+
 - Per-position P&L metrics: Investment Cost, Market Value, Unrealised P&L, Return %
 - Full uploaded holdings DataFrame with auto-inferred current prices from yfinance
 
 ---
 
-## ?? 5. Local Installation & Step-by-Step Execution
+## 5. Local Installation & Step-by-Step Execution
 
 ### Prerequisites
+
 - Python 3.10+ (3.11 recommended)
 - pip
 
@@ -195,21 +205,17 @@ cd Adaptive-Indian-Equity-Allocation-System
 pip install -r requirements.txt
 
 # Step 2: (Optional) Pre-generate backend data artifacts
-# The Streamlit dashboard self-heals on cold start — this step is optional.
-# To explicitly pre-generate the processed return time-series:
-
+# The Streamlit dashboard self-heals on cold start -- this step is optional.
+# Run this to explicitly pre-generate the processed return time-series:
 python -c "
 from core.ingestion import MarketDataFeed
 feed = MarketDataFeed()
 prices, log_returns, simple_returns = feed.fetch_ohlcv(
-    tickers=[
-        'RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS',
-        'BHARTIARTL.NS','ITC.NS','LTIM.NS','KOTAKBANK.NS','LT.NS'
-    ],
+    tickers=['RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS',
+             'BHARTIARTL.NS','ITC.NS','LTIM.NS','KOTAKBANK.NS','LT.NS'],
     period='3y'
 )
-print(f'Ingested {len(prices)} trading days across {len(prices.columns)} Nifty constituents.')
-print(f'Log returns shape: {log_returns.shape}')
+print('Ingested', len(prices), 'trading days across', len(prices.columns), 'Nifty constituents.')
 print('Data pipeline complete. Artifacts saved to data/processed/')
 "
 
@@ -219,51 +225,58 @@ streamlit run wrapper/app.py
 
 > **Note:** On first launch, the dashboard automatically detects missing data artifacts and runs the ingestion pipeline in the background. No manual pre-execution required.
 
+### One-Click Streamlit Cloud Deployment
+
+1. Fork this repository to your GitHub account
+2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub
+3. Click **New app** -- select your fork -- set Main file path to `wrapper/app.py`
+4. Click **Deploy** -- the self-healing cold start logic handles all data initialization automatically
+
 ---
 
-## ?? Project Structure
+## 6. Project Structure
 
 ```
 Adaptive-Indian-Equity-Allocation-System/
-+-- core/
-¦   +-- __init__.py          # Package exports
-¦   +-- ingestion.py         # Market data ingestion (yfinance + QA)
-¦   +-- volatility.py        # GJR-GARCH(1,1,1) volatility engine
-¦   +-- optimization.py      # Sharpe optimizer + Black-Litterman
-¦   +-- sentiment.py         # FinBERT NLP sentiment scoring
-+-- wrapper/
-¦   +-- app.py               # Streamlit Bloomberg Terminal dashboard
-¦   +-- parser.py            # Portfolio CSV/Excel parser
-¦   +-- router.py            # SIP_FIRST / TACTICAL allocation router
-¦   +-- style.css            # Bloomberg dark theme CSS
-+-- backtest/
-¦   +-- walk_forward.py      # Rolling walk-forward backtester
-¦   +-- metrics.py           # Performance metrics calculator
-+-- data/
-¦   +-- raw/                 # Cached OHLCV price data (yfinance)
-¦   +-- processed/           # Computed return time-series CSVs
-+-- sample_portfolio.csv     # Sample portfolio template
-+-- requirements.txt         # Python dependency manifest
-+-- README.md                # This file
+|-- core/
+|   |-- __init__.py          # Package exports
+|   |-- ingestion.py         # Market data ingestion (yfinance + QA)
+|   |-- volatility.py        # GJR-GARCH(1,1,1) volatility engine
+|   |-- optimization.py      # Sharpe optimizer + Black-Litterman
+|   `-- sentiment.py         # FinBERT NLP sentiment scoring
+|-- wrapper/
+|   |-- app.py               # Streamlit Bloomberg Terminal dashboard
+|   |-- parser.py            # Portfolio CSV/Excel parser
+|   |-- router.py            # SIP_FIRST / TACTICAL allocation router
+|   `-- style.css            # Bloomberg dark theme CSS
+|-- backtest/
+|   |-- walk_forward.py      # Rolling walk-forward backtester
+|   `-- metrics.py           # Performance metrics calculator
+|-- data/
+|   |-- raw/                 # Cached OHLCV price data (yfinance)
+|   `-- processed/           # Computed return time-series CSVs
+|-- sample_portfolio.csv     # Sample portfolio template
+|-- requirements.txt         # Python dependency manifest
+`-- README.md                # This file
 ```
 
 ---
 
-## ?? Technical Highlights for TPM / RevOps Hiring Managers
+## 7. Technical Highlights for TPM / RevOps Hiring Managers
 
 | Dimension | Implementation |
-|-----------|---------------|
-| **Risk Model Sophistication** | GJR-GARCH(1,1,1) with Student-t innovations — captures leverage effect and fat tails; EWMA fallback ensures zero crashes |
+|-----------|----------------|
+| **Risk Model Sophistication** | GJR-GARCH(1,1,1) with Student-t innovations -- captures leverage effect and fat tails; EWMA fallback ensures zero crashes |
 | **Optimizer Robustness** | SLSQP with NaN guard, infeasibility recovery, weight clipping, and sum-to-1 re-normalization |
-| **Production Resilience** | Self-healing Streamlit cold start; synthetic price generation if yfinance is unavailable; graceful degradation at every I/O boundary |
-| **Execution Guardrails** | Integer share flooring, ?1,000 micro-trade suppression, per-asset tolerance deadband to prevent churn |
+| **Production Resilience** | Self-healing Streamlit cold start; synthetic price generation if yfinance unavailable; graceful degradation at every I/O boundary |
+| **Execution Guardrails** | Integer share flooring, INR 1,000 micro-trade suppression, per-asset tolerance deadband to prevent churn |
 | **Multi-Modal Deployment** | CLI Python invocation + Streamlit Cloud web app; all modules importable standalone |
 | **Sentiment Integration** | FinBERT (HuggingFace) NLP pipeline with exponential time-decay weighting; lexicon fallback for air-gapped environments |
 | **Backtesting Framework** | Walk-forward with realistic 15bps transaction costs vs Static 60/40 and Buy-and-Hold benchmarks |
 
 ---
 
-## ?? Author
+## Author
 
 **Shourya Singhania**
 
